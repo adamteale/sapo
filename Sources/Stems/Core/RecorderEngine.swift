@@ -124,7 +124,38 @@ final class RecorderEngine: ObservableObject {
         self.activeSessionFolder = folder
         self.levels = [:]
 
-        for item in built { try item.chain.start() }
+        // Partial-start failure guard: chains 0..k-1 may already be running
+        // with live IOProcs writing stems; the k-th chain's start() rolls back
+        // its own writer/hardware before throwing, but the ones before it do
+        // not. Roll everything back and clear ALL engine state so a retry
+        // starts from a clean slate — otherwise the manifest on disk
+        // advertises an open session while the engine sits in .idle with
+        // non-nil store/manifest/chains/activeSessionFolder (the allSatisfy
+        // auto-stop can never fire, and a retry would abandon running chains
+        // by overwriting self.chains).
+        do {
+            for item in built { try item.chain.start() }
+        } catch {
+            for item in built { item.chain.stop(reason: "startupFailed") }
+            for var tap in built.compactMap(\.tap) { tap.dispose() }
+            if let observer = workspaceObserver {
+                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            }
+            workspaceObserver = nil
+            self.chains = []
+            self.levels = [:]
+            self.manifest = nil
+            self.store = nil
+            self.activeSessionFolder = nil
+            if FileManager.default.fileExists(atPath: folder.path) {
+                do {
+                    try FileManager.default.removeItem(at: folder)
+                } catch {
+                    try? store.deleteStems(in: folder) // best-effort fallback
+                }
+            }
+            throw error
+        }
 
         observeAppTermination()
 
@@ -137,7 +168,12 @@ final class RecorderEngine: ObservableObject {
         ) { [weak self] note in
             guard let self else { return }
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            for item in self.chains where item.source.bundleIdentifier == app.bundleIdentifier {
+            for item in self.chains {
+                // Require a real bundle identifier on BOTH sides: with a plain
+                // `==`, a bundle-less termination (nil bundleIdentifier) would
+                // match every source whose bundleIdentifier is also nil.
+                guard let sourceBundle = item.source.bundleIdentifier,
+                      sourceBundle == app.bundleIdentifier else { continue }
                 item.chain.stop(reason: "processExited")
             }
         }
