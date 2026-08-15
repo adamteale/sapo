@@ -28,6 +28,19 @@ extension SessionStartError: LocalizedError {
     }
 }
 
+enum EngineMutationError: LocalizedError {
+    case notRecording
+    case unresolvableSource(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notRecording: return "No recording session is running."
+        case .unresolvableSource(let name):
+            return "\(name) isn’t producing audio right now — start audio in it and try again."
+        }
+    }
+}
+
 /// Orchestrates one recording session: builds one CaptureChain per source,
 /// persists the manifest at session start (crash-safe: all stems open,
 /// `endTime: nil`), updates it as each stem ends, and tears everything down
@@ -49,6 +62,9 @@ final class RecorderEngine: ObservableObject {
     private var manifest: SessionManifest?
     private var store: SessionStore?
     private var workspaceObserver: NSObjectProtocol?
+    /// Shared with addSource: mid-session mutation must resolve against the
+    /// same process/device snapshot registry that started the session.
+    private let registry = SourceRegistry()
 
     static func stemFileName(for source: SourceDescriptor, index: Int, format: StemFormat = .alac) -> String {
         let ext = format == .alac ? "caf" : "wav"
@@ -105,7 +121,6 @@ final class RecorderEngine: ObservableObject {
             }
         }
 
-        let registry = SourceRegistry()
         let folder = try store.makeSessionFolder(start: Date())
         var manifest = Self.initialManifest(title: folder.lastPathComponent, sources: sources,
                                             format: format, folder: folder)
@@ -215,8 +230,8 @@ final class RecorderEngine: ObservableObject {
     }
 
     /// Runs on main: onEnded is delivered on the main queue (CaptureChain
-    /// contract). Ends one stem in the manifest, then auto-stops the whole
-    /// session once every stem has ended.
+    /// contract). Ends one stem in the manifest, frees the tap and un-tracks
+    /// the chain, then auto-stops the whole session once every stem has ended.
     @MainActor
     private func stemEnded(sourceID: String, reason: String) {
         guard var manifest = self.manifest, let store = self.store else { return }
@@ -227,13 +242,128 @@ final class RecorderEngine: ObservableObject {
             try? store.save(manifest, to: activeSessionFolder!)
         }
         self.manifest = manifest
-        // All stems ended → auto-stop session.
+
+        // Tap disposal lives here (Task 3): a mid-session removal must free the
+        // tap while the session keeps recording, so the chain is disposed and
+        // un-tracked as soon as its onEnded lands. This removal site is the
+        // reentrancy-critical point in the teardown drain — reasoning:
+        //
+        // (a) A chain is only removed AFTER its own teardown completed: onEnded
+        //     fires exactly-once from the serial teardown queue, after
+        //     stopHardware() unregistered the IOProc and the queue block held
+        //     the chain strongly. So if the auto-stop below (or a concurrent
+        //     stopSession) later iterates `chains` and "misses" a chain that
+        //     this block removed, that chain has already stopped itself — the
+        //     miss cannot skip a chain that is still running.
+        //
+        // (b) No tap is double-disposed here: onEnded is exactly-once, so this
+        //     block runs once per chain, and after removal the chain is gone
+        //     from `chains` — stopSession's final dispose safety (below) and
+        //     this block can each run at most once per tap. The only
+        //     theoretical overlap (stopSession racing this block off-main)
+        //     double-disposes, which ProcessTapSession.dispose tolerates — it
+        //     returns an ignorable error at the HAL level.
+        if let idx = chains.firstIndex(where: { $0.source.id == sourceID }) {
+            chains[idx].tap?.dispose()
+            chains.remove(at: idx)
+        }
+        // All stems ended → auto-stop session. Reentrant while this drain is
+        // still unwinding: the chain above was already removed, so the nested
+        // stopSession only sees the chains that are genuinely still running.
         if manifest.stems.allSatisfy({ $0.endTime != nil }) { stopSession() }
     }
+
+    /// Live mutation: add a source to the running session, or throw.
+    ///
+    /// Ruling-3 deviation from the task brief: `chain.start()` runs BEFORE any
+    /// state mutation (stem record, manifest save, chains append). The brief's
+    /// order appended the StemRecord and saved the manifest first, which would
+    /// persist a stem for a source whose start() then failed — debris in the
+    /// manifest and on disk for a stem that never recorded a single frame.
+    func addSource(_ source: SourceDescriptor) throws {
+        guard case .recording = state, let store, let manifest, let folder = activeSessionFolder else {
+            throw EngineMutationError.notRecording
+        }
+        guard var resolved = SourceResolver.resolve(source: source, registry: registry) else {
+            throw EngineMutationError.unresolvableSource(source.name)
+        }
+        let sourceID = source.id
+        let fileName = Self.stemFileName(for: source, index: manifest.stems.count, format: manifest.stemFormat)
+        let chain: CaptureChain
+        do {
+            chain = try CaptureChain.make(deviceID: resolved.deviceID, scope: kAudioObjectPropertyScopeInput,
+                                          stemURL: folder.appendingPathComponent(fileName), format: manifest.stemFormat)
+        } catch {
+            // make() failed after resolve() created the tap: don't leak it.
+            resolved.tap?.dispose()
+            throw error
+        }
+        chain.onLevel = { [weak self] level in self?.levels[sourceID] = level }
+        chain.onEnded = { [weak self] reason in
+            MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
+        }
+        do {
+            try chain.start()
+        } catch {
+            // Mirror startSession's failure cleanup for this one chain. The
+            // chain was never tracked, so nothing to remove from `chains`; the
+            // async onEnded("startupFailed") that lands later finds no stem in
+            // the manifest and no chain in `chains` (firstIndex guards) and is
+            // a no-op.
+            chain.stop(reason: "startupFailed")
+            resolved.tap?.dispose()
+            throw error
+        }
+        var updated = manifest
+        updated.stems.append(StemRecord(source: source, fileName: fileName,
+                                        sampleRate: chain.clientFormat.mSampleRate,
+                                        channelCount: Int(chain.clientFormat.mChannelsPerFrame),
+                                        startTime: Date(), endTime: nil, endEvent: nil))
+        // Track the chain BEFORE persisting: if the save below throws, the
+        // chain must already be reachable so the normal drain can reclaim it
+        // (the async onEnded lands in stemEnded, which disposes the tap and
+        // un-tracks the chain). If it were untracked, nothing would retain it
+        // while its IOProc is registered — the IOProc holds the chain
+        // unretained, so it would dangle on deallocation.
+        chains.append((source, chain, resolved.tap))
+        do {
+            try store.save(updated, to: folder)
+            self.manifest = updated
+        } catch {
+            // Save failed after start succeeded: stop the chain and rethrow.
+            // stemEnded's later onEnded finds no stem for this source in the
+            // on-disk manifest (never saved) — no manifest/stem debris — and
+            // reclaims the tracked chain entry.
+            chain.stop(reason: "startupFailed")
+            throw error
+        }
+    }
+
+    /// Live mutation: stop and remove a source from the running session.
+    /// Safe when called twice or for an unknown id (the lookup guard returns
+    /// without doing anything). Teardown is async: the chain's onEnded
+    /// ("userRemoved") lands on main and stemEnded frees the tap and un-tracks
+    /// the chain.
+    func removeSource(id: String) {
+        guard let item = chains.first(where: { $0.source.id == id }) else { return }
+        item.chain.stop(reason: "userRemoved")
+    }
+
+    /// Sources currently producing stems in the active session.
+    var recordingSourceIDs: Set<String> { Set(chains.map(\.source.id)) }
 
     func stopSession() {
         guard case .recording = state else { return }
         for item in chains { item.chain.stop(reason: "sessionEnd") }
+        // Deliberately KEPT (deviation from the brief, per controller ruling 1):
+        // the brief drops this loop on the assumption that each chain's
+        // onEnded("sessionEnd") callback removes it in stemEnded — but on this
+        // all-main path stopSession nil's out store/manifest/chains
+        // synchronously, so by the time the async onEnded blocks land,
+        // stemEnded early-returns at its guard and the taps would never be
+        // disposed. This idempotent safety frees them; chains removed earlier
+        // by stemEnded (mid-session removals) are no longer in the array, and
+        // dispose() is idempotent at the HAL level.
         for var tap in chains.compactMap(\.tap) { tap.dispose() }
         if var manifest = self.manifest, let store = self.store {
             manifest.endTime = Date()
