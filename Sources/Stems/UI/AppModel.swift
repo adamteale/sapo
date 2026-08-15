@@ -64,8 +64,13 @@ final class AppModel: ObservableObject {
     /// window in NSApp.windows but orderOut sets isVisible == false — so this
     /// is the visibility signal the window gate keys on (onDisappear is never
     /// used, per the plan).
+    ///
+    /// The window is identified structurally, not by title: its title tracks
+    /// the selected tab's navigationTitle ("Recorder"/"Sessions"/session
+    /// title), never "Stems". This app is LSUIElement with exactly one regular
+    /// window, so a visible window that can become main is precisely it.
     static func stemsWindowVisible() -> Bool {
-        NSApp.windows.contains { $0.title == "Stems" && $0.isVisible }
+        NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
     }
 
     /// Window-visibility entry point, called from AppDelegate's key/occlusion

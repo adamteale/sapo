@@ -59,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let mainWindow = NSApp.windows.first(where: { $0.title == "Stems" })
                 ?? NSApp.windows.first(where: { $0.canBecomeMain })
             mainWindow?.delegate = self.hideOnClose
+            // Initial gate evaluation: SwiftUI created the window before this
+            // block ran, so no key/occlusion notification will fire for the
+            // launch — evaluate once so meters are live on a launched-but-
+            // never-keyed window.
+            model.windowVisibilityChanged(AppModel.stemsWindowVisible())
         }
     }
 
