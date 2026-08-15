@@ -24,6 +24,10 @@ import CoreAudio
 final class CaptureChain {
     let deviceID: AudioObjectID
     let scope: AudioObjectPropertyScope      // .input for taps and mics
+    /// The client (HAL input stream) format this chain was built with — exposed
+    /// so RecorderEngine can write real sample-rate/channel metadata into the
+    /// session manifest after creation (Task 7 ruling 1).
+    let clientFormat: AudioStreamBasicDescription
     private let writer: StemWriter
     private let bytesPerFrame: Int          // hoisted from the HAL read in make()
     private var ioProcID: AudioDeviceIOProcID?
@@ -36,11 +40,13 @@ final class CaptureChain {
     private var ended = false                // only touched on teardownQueue
 
     init(deviceID: AudioObjectID, scope: AudioObjectPropertyScope,
-         writer: StemWriter, bytesPerFrame: Int) {
+         writer: StemWriter, bytesPerFrame: Int,
+         clientFormat: AudioStreamBasicDescription) {
         self.deviceID = deviceID
         self.scope = scope
         self.writer = writer
         self.bytesPerFrame = bytesPerFrame
+        self.clientFormat = clientFormat
     }
 
     private static func inputFormat(deviceID: AudioObjectID, scope: AudioObjectPropertyScope) -> AudioStreamBasicDescription? {
@@ -63,7 +69,8 @@ final class CaptureChain {
         // can take HAL-internal locks and are not realtime-safe.
         let bytesPerFrame = Int(clientFormat.mBytesPerFrame)
         let writer = try StemWriter(url: stemURL, clientFormat: clientFormat, format: format)
-        return CaptureChain(deviceID: deviceID, scope: scope, writer: writer, bytesPerFrame: bytesPerFrame)
+        return CaptureChain(deviceID: deviceID, scope: scope, writer: writer,
+                            bytesPerFrame: bytesPerFrame, clientFormat: clientFormat)
     }
 
     func start() throws {
