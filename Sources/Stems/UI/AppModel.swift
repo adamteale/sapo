@@ -20,6 +20,17 @@ final class AppModel: ObservableObject {
     @Published var permissionDenied = false
 
     private let registry = SourceRegistry()
+    private var cancellables: Set<AnyCancellable> = []
+
+    init() {
+        // Forward engine state changes (recording started/stopped, meter levels)
+        // to this model so views observing only AppModel stay in sync.
+        engine.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+    }
 
     var selectedSources: [SourceDescriptor] {
         (appSources + micSources).filter { selectedSourceIDs.contains($0.id) }
@@ -46,6 +57,7 @@ final class AppModel: ObservableObject {
     func requestMicPermission(_ done: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
+            permissionDenied = false
             done(true)
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { granted in

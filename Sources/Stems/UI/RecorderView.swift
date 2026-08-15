@@ -29,7 +29,7 @@ struct RecorderView: View {
         .navigationTitle("Recorder")
         .onAppear { model.refreshSources() }
         .onReceive(Self.timer) { _ in
-            if isRecording { model.objectWillChange.send() } // refresh timer + meters
+            model.objectWillChange.send() // refresh timer + meters (10Hz; cheap even when idle)
         }
     }
 
