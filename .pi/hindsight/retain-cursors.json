@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "sessions": {
+    "3831468049e359d6": {
+      "index": 1,
+      "chainHash": "880f3ac113ec95b4647c0f61de90ab5851280a92c17591f3cf055e878d1b6b3f",
+      "idChainHash": "cd372fb85148700fa88095e3492d3f9f5beb43e555e5ff26d95f5a6adc36f8e6",
+      "tailStart": 0,
+      "messageIds": [
+        "",
+        ""
+      ],
+      "fingerprints": [
+        "af7227bcb6a23cc4dffc12679cce7c6201a0ff8d290249dd9672e01af1a1b333",
+        "68e08c2b6a3163185b45b78ec43aaa198e8e0db7cfaeda3ec990057e78fe5771"
+      ]
+    }
+  }
+}
