@@ -101,4 +101,24 @@ import Testing
         #expect(files[0].lastPathComponent.contains("Chrome"))
         try? FileManager.default.removeItem(at: dest)
     }
+
+    @Test func exportFailsWhenSelectedStemFileMissing() throws {
+        let (folder, manifest, cleanup) = try Self.makeSession()
+        defer { cleanup() }
+        // Delete the first stem's file so it is missing from disk but still in the manifest.
+        let missingName = manifest.stems[0].fileName
+        try FileManager.default.removeItem(at: folder.appendingPathComponent(missingName))
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("stems-out-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let request = ExportRequest(sessionFolder: folder,
+                                    selectedStemIDs: [manifest.stems[0].id],
+                                    scope: .combined, format: .wav, destination: dest)
+        do {
+            _ = try ExportEngine.export(request)
+            Issue.record("expected export to throw for missing stem file")
+        } catch {
+            #expect("\(error)".contains(missingName))
+        }
+    }
 }

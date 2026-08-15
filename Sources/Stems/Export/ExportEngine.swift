@@ -11,6 +11,17 @@ struct ExportRequest {
     var destination: URL
 }
 
+enum ExportError: Error, LocalizedError {
+    case missingStems([String])
+
+    var errorDescription: String? {
+        switch self {
+        case .missingStems(let files):
+            "\(files.count) stem file(s) missing: \(files.joined(separator: ", "))"
+        }
+    }
+}
+
 enum ExportEngine {
     static func sanitize(_ name: String) -> String {
         name.replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: "/", with: "-")
@@ -21,8 +32,20 @@ enum ExportEngine {
         let selected = manifest.stems.filter { request.selectedStemIDs.contains($0.id) }
         guard !selected.isEmpty else { return [] }
 
-        let stems = selected.compactMap { try? StemReader.read($0, sessionStart: manifest.startTime,
-                                                               folder: request.sessionFolder) }
+        // Read every selected stem explicitly: decode errors propagate, and a nil
+        // return (file missing on disk) is treated as a failure so a stem can never
+        // silently vanish from the export.
+        var stems: [StemAudio] = []
+        var missing: [String] = []
+        for stem in selected {
+            guard let audio = try StemReader.read(stem, sessionStart: manifest.startTime,
+                                                  folder: request.sessionFolder) else {
+                missing.append(stem.fileName)
+                continue
+            }
+            stems.append(audio)
+        }
+        if !missing.isEmpty { throw ExportError.missingStems(missing) }
         guard !stems.isEmpty else { return [] }
 
         let rate = stems.map(\.buffer.format.sampleRate).max() ?? 48_000
