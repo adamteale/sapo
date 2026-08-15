@@ -36,3 +36,10 @@ PLIST
 
 codesign --force --sign - "$APP"
 echo "Built $APP (${VERSION})"
+
+if [ "${DMG:-0}" = "1" ]; then
+    DMG_PATH="build/Stems-${VERSION}.dmg"
+    rm -f "$DMG_PATH"
+    hdiutil create -volname "Stems" -srcfolder "$APP" -ov -format UDZO "$DMG_PATH"
+    echo "Built $DMG_PATH"
+fi
