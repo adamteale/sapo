@@ -62,13 +62,17 @@ struct RecorderView: View {
 
     private func sourceRow(_ source: SourceDescriptor) -> some View {
         let selected = model.selectedSourceIDs.contains(source.id)
-        let level = model.engine.levels[source.id] ?? 0
         return HStack {
             Toggle(source.name, isOn: Binding(
                 get: { selected },
                 set: { _ in model.toggleSource(source.id) }))
             Spacer()
-            if isRecording { LevelMeterView(level: level).frame(width: 80) }
+            // Meter column on EVERY row, idle and recording: level(for:) reads
+            // engine levels for recording chains, meter taps otherwise. Dimmed
+            // while the window gate is off (window hidden / mic denied).
+            LevelMeterView(level: model.level(for: source.id))
+                .frame(width: 90)
+                .opacity(model.metersOn ? 1 : 0.25)
         }
     }
 

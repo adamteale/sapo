@@ -8,11 +8,19 @@ final class AppModel: ObservableObject {
     let engine = RecorderEngine()
     let store = SessionStore()
     let settings: SettingsStore
+    /// Coordinates meter-only capture taps (Task 2/3): one MeterChain per
+    /// metered row id, reconciled on window/session/row changes.
+    let meters = MeterManager()
 
     @Published var appSources: [SourceDescriptor] = []
     @Published var micSources: [SourceDescriptor] = []
     @Published var selectedSourceIDs: Set<String> = []
     @Published var permissionDenied = false
+    /// Window-visibility gate: meter taps only run while the Stems window is
+    /// on screen (hide-on-close keeps the window in NSApp.windows with
+    /// isVisible == false while hidden — that's the signal). Driven by
+    /// AppDelegate's key/occlusion notifications via windowVisibilityChanged.
+    @Published var metersOn = false
     /// Last recording-start error (e.g. low disk), shown in the recorder view;
     /// cleared on the next Record tap.
     @Published var lastError: String?
@@ -25,10 +33,17 @@ final class AppModel: ObservableObject {
     init(settings: SettingsStore = SettingsStore()) {
         self.settings = settings
         // Forward engine state changes (recording started/stopped, meter levels)
-        // to this model so views observing only AppModel stay in sync.
+        // to this model so views observing only AppModel stay in sync, and
+        // re-evaluate meter targets on every engine change: record start/stop
+        // changes recordingSourceIDs, so recording sources must stop being
+        // metered the moment they start capturing and resume when they end
+        // (ruling 2). reconcileMeters is idempotent — the 10Hz levels churn
+        // during recording is a cheap no-op diff, not a churn of taps.
         engine.objectWillChange
             .sink { [weak self] _ in
-                self?.objectWillChange.send()
+                guard let self else { return }
+                self.objectWillChange.send()
+                self.reconcileMeters()
             }
             .store(in: &cancellables)
     }
@@ -45,14 +60,89 @@ final class AppModel: ObservableObject {
         return Int64(Double(selectedSourceIDs.count) * wavBytesPerSecond * factor * 3600)
     }
 
+    /// True while the Stems window is on screen. Hide-on-close keeps the
+    /// window in NSApp.windows but orderOut sets isVisible == false — so this
+    /// is the visibility signal the window gate keys on (onDisappear is never
+    /// used, per the plan).
+    static func stemsWindowVisible() -> Bool {
+        NSApp.windows.contains { $0.title == "Stems" && $0.isVisible }
+    }
+
+    /// Window-visibility entry point, called from AppDelegate's key/occlusion
+    /// notifications. Mic permission gates meter taps (ruling 4): the first
+    /// time the window shows, route through requestMicPermission — granted
+    /// turns meters on, denial keeps the existing permission bar and meters
+    /// stay off. requestMicPermission's .authorized fast path is synchronous,
+    /// so the common case has no async gap.
+    func windowVisibilityChanged(_ visible: Bool) {
+        guard visible else {
+            metersOn = false
+            reconcileMeters()
+            return
+        }
+        requestMicPermission { [weak self] granted in
+            guard let self else { return }
+            // The first-ever prompt is async: the window may have hidden while
+            // it was up. Re-check so the gate can't turn meters on for a
+            // hidden window.
+            guard Self.stemsWindowVisible() else {
+                self.metersOn = false
+                self.reconcileMeters()
+                return
+            }
+            self.metersOn = granted
+            self.reconcileMeters()
+        }
+    }
+
+    /// Display level for a row: recording chains win; otherwise meter taps.
+    func level(for id: String) -> Float {
+        engine.levels[id] ?? meters.meterLevels[id] ?? 0
+    }
+
+    /// Idempotent: bring meter taps in line with the current window gate, row
+    /// set, and recording set. Callers: windowVisibilityChanged (App.swift
+    /// notifications), engine transitions (init sink), and toggle/refresh.
+    /// The double-tap rule lives in meterTargets: recording sources are never
+    /// metered.
+    func reconcileMeters() {
+        guard metersOn else { meters.stopAll(); return }
+        let rows = (appSources + micSources)
+        let sources = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+        meters.reconcile(targets: meterTargets(rowIDs: rows.map(\.id),
+                                               windowVisible: metersOn,
+                                               recordingSourceIDs: engine.recordingSourceIDs),
+                         sources: sources)
+    }
+
     func refreshSources() {
         appSources = registry.currentAppSources()
         micSources = registry.currentMicSources()
+        // New rows need meter chains started; gone rows need theirs stopped.
+        reconcileMeters()
     }
 
     func toggleSource(_ id: String) {
-        if selectedSourceIDs.contains(id) { selectedSourceIDs.remove(id) }
-        else { selectedSourceIDs.insert(id) }
+        if case .recording = engine.state {
+            // Live mid-session mutation: tick starts a real stem, un-tick ends
+            // it (its onEnded lands on main; stemEnded frees tap + un-tracks).
+            if selectedSourceIDs.contains(id) {
+                engine.removeSource(id: id)
+                selectedSourceIDs.remove(id)
+            } else if let source = (appSources + micSources).first(where: { $0.id == id }) {
+                do {
+                    try engine.addSource(source)
+                    selectedSourceIDs.insert(id)
+                } catch {
+                    lastError = error.localizedDescription
+                }
+            }
+        } else {
+            // Idle path: pure selection — startRecording uses it later.
+            if selectedSourceIDs.contains(id) { selectedSourceIDs.remove(id) }
+            else { selectedSourceIDs.insert(id) }
+        }
+        reconcileMeters()
     }
 
     func requestMicPermission(_ done: @escaping (Bool) -> Void) {

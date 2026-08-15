@@ -362,18 +362,20 @@ final class RecorderEngine: ObservableObject {
         } catch {
             // Save failed after start succeeded: stop the chain, dispose the
             // tap, and delete the orphaned stem file DIRECTLY (deterministic —
-            // don't rely on the async onEnded landing). The chain entry stays
-            // tracked so the later onEnded("startupFailed") finds it in
-            // stemEnded's failed-add branch, which re-deletes the
-            // (already-removed) file and un-tracks the entry; its tap was
-            // disposed here, so nil it out to keep stemEnded's dispose a no-op.
-            // No manifest debris: the on-disk manifest never gained the stem
-            // (the save failed before the in-memory manifest was updated).
+            // don't rely on the async onEnded landing). The chains entry is
+            // removed synchronously too (ruling, Task 4 pre-step): if it were
+            // left tracked, a stale onEnded("startupFailed") landing later
+            // would find a RE-ADDED chain with the same source id in
+            // stemEnded's failed-add branch and delete THAT chain's stem file
+            // (and dispose its tap) — removing the entry here closes that
+            // window. The chain stays alive after removal: stop() enqueues a
+            // teardown block that captures it strongly until the IOProc is
+            // unregistered. No manifest debris: the on-disk manifest never
+            // gained the stem (the save failed before the in-memory manifest
+            // was updated).
             chain.stop(reason: "startupFailed")
             resolved.tap?.dispose()
-            if let idx = chains.firstIndex(where: { $0.source.id == sourceID }) {
-                chains[idx].tap = nil
-            }
+            chains.removeAll { $0.source.id == sourceID }
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
             throw error
         }

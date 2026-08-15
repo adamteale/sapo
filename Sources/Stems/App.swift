@@ -20,6 +20,8 @@ final class HideOnCloseWindowDelegate: NSObject, NSWindowDelegate {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBar: MenuBarController?
     private let hideOnClose = HideOnCloseWindowDelegate()
+    /// Window-gate observers; removed in applicationWillTerminate.
+    private var windowObservers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let model = AppModel.shared
@@ -29,6 +31,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.makeKeyAndOrderFront(nil)
             }
         }
+        // Window gate: recompute metersOn whenever the window becomes/ceases
+        // key or its occlusion state changes (hide-on-close, tab switch,
+        // covered by a fullscreen app). Observe on the main queue; the handler
+        // routes through mic permission (ruling 4) via
+        // AppModel.windowVisibilityChanged.
+        let center = NotificationCenter.default
+        let visibilityHandler: (Notification) -> Void = { _ in
+            model.windowVisibilityChanged(AppModel.stemsWindowVisible())
+        }
+        windowObservers.append(center.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main,
+            using: visibilityHandler))
+        windowObservers.append(center.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: nil, queue: .main,
+            using: visibilityHandler))
+        windowObservers.append(center.addObserver(
+            forName: NSApplication.didChangeOcclusionStateNotification, object: nil, queue: .main,
+            using: visibilityHandler))
         // The WindowGroup window is created by SwiftUI after
         // applicationDidFinishLaunching returns, so defer one main-queue turn
         // before installing the hide-on-close delegate. The window stays in
@@ -40,6 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ?? NSApp.windows.first(where: { $0.canBecomeMain })
             mainWindow?.delegate = self.hideOnClose
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        let center = NotificationCenter.default
+        windowObservers.forEach(center.removeObserver)
+        windowObservers = []
     }
 }
 
