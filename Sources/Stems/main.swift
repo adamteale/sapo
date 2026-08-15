@@ -40,6 +40,12 @@ func runCLI() -> Int32? {
         let outDir = URL(fileURLWithPath: flagValue("--out", in: args, default: NSTemporaryDirectory()))
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         return RecordCLI.recordMic(seconds: seconds, outDir: outDir)
+    case "--meter":
+        // --meter <bundleID|pid:N|mic> --seconds N
+        guard args.count >= 3 else { return 64 }
+        let id = args[2]
+        let seconds = Double(flagValue("--seconds", in: args, default: "5")) ?? 5
+        return RecordCLI.meter(id: id, seconds: seconds)
     default:
         FileHandle.standardError.write("unknown command \(command)\n".data(using: .utf8)!)
         return 64

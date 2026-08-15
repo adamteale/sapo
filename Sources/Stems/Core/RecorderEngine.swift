@@ -116,20 +116,11 @@ final class RecorderEngine: ObservableObject {
                 let fileName = manifest.stems[index].fileName
                 let stemURL = folder.appendingPathComponent(fileName)
 
-                var tap: ProcessTapSession?
-                let deviceID: AudioObjectID
-                switch source.kind {
-                case .application:
-                    let objectIDs = registry.processObjectIDs(for: source)
-                    guard !objectIDs.isEmpty else { continue } // app not making audio right now → skipped stem
-                    var t = try ProcessTapSession.create(processObjectIDs: objectIDs, name: source.name)
-                    deviceID = t.aggregateDeviceID
-                    tap = t
-                case .microphone:
-                    guard let uid = source.deviceUID,
-                          let id = registry.deviceID(forUID: uid) else { continue }
-                    deviceID = id
-                }
+                // Shared resolution: app not making audio / device absent →
+                // skipped stem (pruned from the manifest below).
+                guard let resolved = SourceResolver.resolve(source: source, registry: registry) else { continue }
+                let deviceID = resolved.deviceID
+                let tap = resolved.tap
 
                 let chain = try CaptureChain.make(deviceID: deviceID,
                                                   scope: kAudioObjectPropertyScopeInput,

@@ -49,7 +49,7 @@ final class CaptureChain {
         self.clientFormat = clientFormat
     }
 
-    private static func inputFormat(deviceID: AudioObjectID, scope: AudioObjectPropertyScope) -> AudioStreamBasicDescription? {
+    static func inputStreamFormat(deviceID: AudioObjectID, scope: AudioObjectPropertyScope) -> AudioStreamBasicDescription? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamFormat,
                                                  mScope: scope,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -62,7 +62,7 @@ final class CaptureChain {
 
     static func make(deviceID: AudioObjectID, scope: AudioObjectPropertyScope,
                      stemURL: URL, format: StemFormat) throws -> CaptureChain {
-        guard let clientFormat = inputFormat(deviceID: deviceID, scope: scope) else {
+        guard let clientFormat = inputStreamFormat(deviceID: deviceID, scope: scope) else {
             throw StemWriterError.status(OSStatus(paramErr), "no input stream format on device \(deviceID)")
         }
         // Hoisted once here, never re-queried in the IOProc: HAL property reads
