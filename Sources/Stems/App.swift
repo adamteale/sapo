@@ -7,6 +7,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+extension AppModel {
+    static let shared = AppModel()
+}
+
 struct StemsApp: App {
     // NOTE: no @main here — main.swift calls StemsApp.main() (SwiftPM executables
     // only allow top-level code in main.swift).
@@ -14,9 +18,8 @@ struct StemsApp: App {
 
     var body: some Scene {
         WindowGroup("Stems") {
-            Text("Stems")
-                .padding()
-                .frame(minWidth: 480, minHeight: 360)
+            RecorderView(model: AppModel.shared)
+                .frame(minWidth: 520, minHeight: 480)
         }
         .windowResizability(.contentSize)
     }
