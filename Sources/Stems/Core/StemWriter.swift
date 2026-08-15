@@ -4,6 +4,15 @@ import AudioToolbox
 
 enum StemWriterError: Error { case status(OSStatus, String) }
 
+extension StemWriterError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .status(let code, let message):
+            return "Recording error: \(message) (code \(code))"
+        }
+    }
+}
+
 final class StemWriter {
     private var file: ExtAudioFileRef?
     private let url: URL

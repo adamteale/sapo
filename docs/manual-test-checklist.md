@@ -19,3 +19,4 @@
 14. Low disk: fill volume (or fake small APFS quota) → start session shows warning.
     (If impractical, verify code path via unit-injected small threshold.)
 15. Menu bar: Record with no prior selection opens window; red icon while recording.
+16. Close the main window, then click Open Stems… in the menu bar — the window reappears.

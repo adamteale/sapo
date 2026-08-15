@@ -22,6 +22,13 @@ final class MenuBarController: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.rebuildMenu() }
             .store(in: &cancellables)
+        // Menu-bar-initiated start failures never surface in the recorder view
+        // (the window may be hidden), so surface them here as an alert and pull
+        // the window forward.
+        model.$lastError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in self?.handleLastError(error) }
+            .store(in: &cancellables)
         Timer.publish(every: 1, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
                 guard case .recording = self?.model.engine.state else { return }
@@ -78,6 +85,29 @@ final class MenuBarController: NSObject {
     @objc private func stopTapped() { model.stopRecording() }
 
     @objc private func openTapped() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow()
+    }
+
+    /// Last error value we already alerted on; reset when lastError clears so
+    /// a later identical failure still shows its own alert.
+    private var lastShownError: String?
+
+    private func handleLastError(_ error: String?) {
+        guard let error else {
+            lastShownError = nil
+            return
+        }
+        guard error != lastShownError else { return }
+        lastShownError = error
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't start recording"
+        alert.informativeText = error
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        // Bring the recorder window forward so the user can fix the cause
+        // (e.g. select sources) — same path as Open Stems….
         NSApp.activate(ignoringOtherApps: true)
         openWindow()
     }
