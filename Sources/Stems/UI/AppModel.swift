@@ -13,6 +13,9 @@ final class AppModel: ObservableObject {
     @Published var micSources: [SourceDescriptor] = []
     @Published var selectedSourceIDs: Set<String> = []
     @Published var permissionDenied = false
+    /// Last recording-start error (e.g. low disk), shown in the recorder view;
+    /// cleared on the next Record tap.
+    @Published var lastError: String?
 
     private let registry = SourceRegistry()
     private var cancellables: Set<AnyCancellable> = []
@@ -71,12 +74,19 @@ final class AppModel: ObservableObject {
     }
 
     func startRecording() {
+        lastError = nil
         let sources = selectedSources
         guard !sources.isEmpty else { return }
         requestMicPermission { [weak self] granted in
             guard let self, granted else { return }
-            try? self.engine.startSession(sources: sources, format: self.settings.stemFormat,
-                                          store: self.store)
+            do {
+                try self.engine.startSession(sources: sources, format: self.settings.stemFormat,
+                                             store: self.store)
+            } catch {
+                // Surface start failures (low disk, device errors) instead of
+                // swallowing them: the message is shown under the controls bar.
+                self.lastError = error.localizedDescription
+            }
         }
     }
 

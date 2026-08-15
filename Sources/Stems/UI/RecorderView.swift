@@ -24,6 +24,13 @@ struct RecorderView: View {
             sourceList
             Divider()
             controlsBar
+            if let lastError = model.lastError {
+                Text(lastError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
             if model.permissionDenied { permissionBar }
         }
         .navigationTitle("Recorder")

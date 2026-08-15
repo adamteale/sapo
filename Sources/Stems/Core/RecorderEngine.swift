@@ -8,6 +8,26 @@ enum RecordState: Equatable {
     case recording(startedAt: Date)
 }
 
+enum SessionStartError: Error, Equatable {
+    /// Not enough free disk space on the session volume for a recording of the
+    /// estimated size. `available` is the volume's current free space;
+    /// `needed` is the greater of the caller's `minimumFreeBytes` and the
+    /// 2-hour session estimate.
+    case lowDisk(available: Int64, needed: Int64)
+}
+
+extension SessionStartError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .lowDisk(let available, let needed):
+            let fmt = ByteCountFormatter()
+            fmt.countStyle = .file
+            return "Not enough free disk space: \(fmt.string(fromByteCount: available)) free, "
+                 + "but recording needs at least \(fmt.string(fromByteCount: needed))."
+        }
+    }
+}
+
 /// Orchestrates one recording session: builds one CaptureChain per source,
 /// persists the manifest at session start (crash-safe: all stems open,
 /// `endTime: nil`), updates it as each stem ends, and tears everything down
@@ -57,9 +77,33 @@ final class RecorderEngine: ObservableObject {
             appVersion: "0.1.0")
     }
 
-    func startSession(sources: [SourceDescriptor], format: StemFormat, store: SessionStore) throws {
+    /// Rough 2-hour session size in bytes: bytes/sec per source × 7200s, ALAC
+    /// ≈ 50% of WAV (heuristic for the low-disk pre-flight, not a billing
+    /// meter). Matches `AppModel.estimatedBytesPerHour`'s math at ×2 hours.
+    static func estimatedSessionBytes(sources: [SourceDescriptor], format: StemFormat) -> Int64 {
+        let wavBytesPerSecond = 48_000.0 * 2.0 * 2.0 // rate × channels × 2 bytes
+        let factor = format == .alac ? 0.5 : 1.0
+        return Int64(Double(sources.count) * wavBytesPerSecond * 7200.0 * factor)
+    }
+
+    func startSession(sources: [SourceDescriptor], format: StemFormat, store: SessionStore,
+                      minimumFreeBytes: Int64? = nil) throws {
         guard case .idle = state else { return }
         guard !sources.isEmpty else { return }
+
+        // Low-disk pre-flight: checked BEFORE any folder or capture chain is
+        // created, so a failed start leaves no trace behind. Reads the volume's
+        // important-usage capacity off the store root (the volume sessions are
+        // written to); if the capacity can't be read we proceed — the check is
+        // best-effort, not a failure path.
+        let threshold = max(minimumFreeBytes ?? 0, Self.estimatedSessionBytes(sources: sources, format: format))
+        if threshold > 0 {
+            let capacity = try? store.root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+                .volumeAvailableCapacityForImportantUsage
+            if let capacity, capacity < threshold {
+                throw SessionStartError.lowDisk(available: capacity, needed: threshold)
+            }
+        }
 
         let registry = SourceRegistry()
         let folder = try store.makeSessionFolder(start: Date())
