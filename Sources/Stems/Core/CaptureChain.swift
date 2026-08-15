@@ -6,20 +6,26 @@ import CoreAudio
 ///
 /// Threading contract:
 /// - `start`/`stop` run on the control thread.
-/// - The IOProc thread only reads `ended` and writes audio into the writer. It
-///   never tears down hardware or closes the file synchronously: `endWith(_:)`
-///   flips `ended` and hops the teardown (AudioDeviceStop, DestroyIOProcID,
-///   writer.closeQuietly) onto the serial `teardownQueue`, then fires `onEnded`
-///   on the main queue.
-/// - `ended` is a plain Bool read/written from both the IOProc thread and the
-///   control thread without a lock. Race window: both may see `false` and both
-///   enqueue teardown — harmless, because teardown is idempotent (ioProcID is
-///   cleared, writer.close() no-ops once the file is nil) and serialized on the
-///   single teardownQueue.
+/// - The IOProc thread writes audio into the writer and updates the meter; it
+///   never tears down hardware or closes the file synchronously. On a write
+///   error it hops teardown onto the serial `teardownQueue`.
+/// - Exactly-once completion: both the IOProc error path and `stop(_:)` enter
+///   `endWith(_:)`, which unconditionally enqueues on the serial
+///   `teardownQueue`. The queue block checks-and-sets `ended` (so `ended` is
+///   only ever touched on that one serial queue — no lock needed), tears down
+///   hardware and closes the writer, then fires `onEnded` on the main queue.
+///   The reason reported is whichever path enqueued first.
+/// - Residual race, accepted for v1: an `ExtAudioFileWrite` already executing
+///   on the IOProc thread when the teardown block runs races the
+///   `ExtAudioFileDispose` in `close()`. `AudioDeviceStop`'s header only says
+///   it "stops IO for the given AudioDeviceIOProcID" — no synchrony guarantee
+///   — so a write may still be in flight while the file is disposed. v1
+///   accepts this window and does not attempt to close it.
 final class CaptureChain {
     let deviceID: AudioObjectID
     let scope: AudioObjectPropertyScope      // .input for taps and mics
     private let writer: StemWriter
+    private let bytesPerFrame: Int          // hoisted from the HAL read in make()
     private var ioProcID: AudioDeviceIOProcID?
     private var lastMeterAt: Double = 0
     private let teardownQueue = DispatchQueue(label: "com.stemsapp.Stems.teardown")
@@ -27,12 +33,14 @@ final class CaptureChain {
     var onLevel: ((Float) -> Void)?          // RMS 0...1, throttled to ~10 Hz
     var onEnded: ((String) -> Void)?         // called once when capture ends
 
-    private var ended = false
+    private var ended = false                // only touched on teardownQueue
 
-    init(deviceID: AudioObjectID, scope: AudioObjectPropertyScope, writer: StemWriter) {
+    init(deviceID: AudioObjectID, scope: AudioObjectPropertyScope,
+         writer: StemWriter, bytesPerFrame: Int) {
         self.deviceID = deviceID
         self.scope = scope
         self.writer = writer
+        self.bytesPerFrame = bytesPerFrame
     }
 
     private static func inputFormat(deviceID: AudioObjectID, scope: AudioObjectPropertyScope) -> AudioStreamBasicDescription? {
@@ -51,8 +59,11 @@ final class CaptureChain {
         guard let clientFormat = inputFormat(deviceID: deviceID, scope: scope) else {
             throw StemWriterError.status(OSStatus(paramErr), "no input stream format on device \(deviceID)")
         }
+        // Hoisted once here, never re-queried in the IOProc: HAL property reads
+        // can take HAL-internal locks and are not realtime-safe.
+        let bytesPerFrame = Int(clientFormat.mBytesPerFrame)
         let writer = try StemWriter(url: stemURL, clientFormat: clientFormat, format: format)
-        return CaptureChain(deviceID: deviceID, scope: scope, writer: writer)
+        return CaptureChain(deviceID: deviceID, scope: scope, writer: writer, bytesPerFrame: bytesPerFrame)
     }
 
     func start() throws {
@@ -64,16 +75,15 @@ final class CaptureChain {
 
             // inputData is a plain UnsafePointer<AudioBufferList> on this SDK;
             // the HAL NULLs mData for disabled streams.
-            guard !chain.ended, inputData.pointee.mNumberBuffers > 0,
+            guard inputData.pointee.mNumberBuffers > 0,
                   let data = inputData.pointee.mBuffers.mData,
                   inputData.pointee.mBuffers.mDataByteSize > 0 else {
                 return noErr
             }
 
             let byteSize = Int(inputData.pointee.mBuffers.mDataByteSize)
-            let asbd = CaptureChain.inputFormat(deviceID: chain.deviceID, scope: chain.scope)
-            let bytesPerFrame = Int(asbd?.mBytesPerFrame ?? 4)
-            let frameCount = UInt32(byteSize / max(bytesPerFrame, 1))
+            // Pure arithmetic only — the HAL format was read once in make().
+            let frameCount = UInt32(byteSize / max(chain.bytesPerFrame, 1))
 
             // meter (throttled): RMS over Float32 samples
             let now = ProcessInfo.processInfo.systemUptime
@@ -111,12 +121,13 @@ final class CaptureChain {
     }
 
     private func endWith(_ reason: String) {
-        guard !ended else { return }
-        ended = true
-
-        // Never tear down hardware or close the file on the IOProc thread;
-        // hop to a serial queue, then report completion on main.
+        // Both entry paths (IOProc write error, control-thread stop) enqueue
+        // unconditionally; the check-and-set of `ended` happens inside the
+        // serial block, so completion is exactly-once without a lock. The
+        // reason reported is whichever path enqueued first.
         teardownQueue.async { [self] in
+            guard !ended else { return }
+            ended = true
             stopHardware()
             writer.closeQuietly()
             DispatchQueue.main.async { self.onEnded?(reason) }
