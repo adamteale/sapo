@@ -29,5 +29,14 @@ import Testing
         #expect(sessions[0].manifest.stems.isEmpty)
         let files = try FileManager.default.contentsOfDirectory(atPath: sessions[0].folderURL.path)
         #expect(files.filter { $0 != "manifest.json" }.isEmpty)
+
+        // Debris for RESOLVABLE-but-failed adds (CaptureChain.make / chain.start /
+        // manifest-save failures) can't be unit-tested — triggering them needs
+        // live audio hardware (a real tap device or an input device that fails to
+        // start). That coverage is: addSource deletes the orphaned stem file
+        // directly in each failure catch, and stemEnded's failed-add branch
+        // (no manifest stem matches the sourceID) deletes it again as the async
+        // onEnded lands — verified via the manual test checklist on the
+        // live-audio path.
     }
 }

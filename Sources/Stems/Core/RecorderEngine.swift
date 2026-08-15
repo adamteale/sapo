@@ -58,7 +58,7 @@ final class RecorderEngine: ObservableObject {
     @Published private(set) var levels: [String: Float] = [:]
     @Published private(set) var activeSessionFolder: URL?
 
-    private var chains: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?)] = []
+    private var chains: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?, fileName: String)] = []
     private var manifest: SessionManifest?
     private var store: SessionStore?
     private var workspaceObserver: NSObjectProtocol?
@@ -125,7 +125,7 @@ final class RecorderEngine: ObservableObject {
         var manifest = Self.initialManifest(title: folder.lastPathComponent, sources: sources,
                                             format: format, folder: folder)
 
-        var built: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?)] = []
+        var built: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?, fileName: String)] = []
         do {
             for (index, source) in sources.enumerated() {
                 let fileName = manifest.stems[index].fileName
@@ -148,7 +148,7 @@ final class RecorderEngine: ObservableObject {
                     // a pure assertion, not a re-dispatch.
                     MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
                 }
-                built.append((source, chain, tap))
+                built.append((source, chain, tap, fileName))
             }
         } catch {
             for item in built { item.chain.stop(reason: "startupFailed") }
@@ -240,6 +240,20 @@ final class RecorderEngine: ObservableObject {
             manifest.stems[idx].endTime = Date()
             manifest.stems[idx].endEvent = reason
             try? store.save(manifest, to: activeSessionFolder!)
+        } else {
+            // No manifest stem matched this chain: it was a mid-session add
+            // whose manifest save failed (the on-disk manifest never gained a
+            // stem for it). The stem file the chain created is orphaned —
+            // unreferenced by the manifest — so delete it here. Safe: onEnded
+            // fires only after the serial teardown block closed the writer, so
+            // the file handle is released before the unlink. The chain entry is
+            // still tracked (addSource appends it before the save), so its
+            // fileName is available for the deletion; the removal block below
+            // then un-tracks the entry.
+            if let folder = activeSessionFolder,
+               let chainIdx = chains.firstIndex(where: { $0.source.id == sourceID }) {
+                try? FileManager.default.removeItem(at: folder.appendingPathComponent(chains[chainIdx].fileName))
+            }
         }
         self.manifest = manifest
 
@@ -296,6 +310,12 @@ final class RecorderEngine: ObservableObject {
         } catch {
             // make() failed after resolve() created the tap: don't leak it.
             resolved.tap?.dispose()
+            // StemWriter.init created the stem file eagerly
+            // (ExtAudioFileCreateWithURL), and the setClient-format failure
+            // path only closes it — the file stays on disk. No chain exists to
+            // fire onEnded, so stemEnded can never reclaim it: delete the
+            // orphan here, directly.
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
             throw error
         }
         chain.onLevel = { [weak self] level in self?.levels[sourceID] = level }
@@ -309,9 +329,12 @@ final class RecorderEngine: ObservableObject {
             // chain was never tracked, so nothing to remove from `chains`; the
             // async onEnded("startupFailed") that lands later finds no stem in
             // the manifest and no chain in `chains` (firstIndex guards) and is
-            // a no-op.
+            // a no-op. start() already closed the writer before throwing, so
+            // the stem file it created is orphaned — and no chains entry exists
+            // for stemEnded's orphan cleanup to find — delete the file here.
             chain.stop(reason: "startupFailed")
             resolved.tap?.dispose()
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
             throw error
         }
         var updated = manifest
@@ -320,21 +343,38 @@ final class RecorderEngine: ObservableObject {
                                         channelCount: Int(chain.clientFormat.mChannelsPerFrame),
                                         startTime: Date(), endTime: nil, endEvent: nil))
         // Track the chain BEFORE persisting: if the save below throws, the
-        // chain must already be reachable so the normal drain can reclaim it
-        // (the async onEnded lands in stemEnded, which disposes the tap and
-        // un-tracks the chain). If it were untracked, nothing would retain it
-        // while its IOProc is registered — the IOProc holds the chain
-        // unretained, so it would dangle on deallocation.
-        chains.append((source, chain, resolved.tap))
+        // chain must already be reachable so the drain can reclaim it (the
+        // async onEnded lands in stemEnded's failed-add branch, which deletes
+        // the orphaned file, disposes the tap and un-tracks the chain). If it
+        // were untracked, nothing would retain it while its IOProc is
+        // registered — the IOProc holds the chain unretained, so it would
+        // dangle on deallocation.
+        //
+        // Residual, accepted: if onEnded never fires for a failed-add chain,
+        // its stem file could sit orphaned — unreachable in practice, because
+        // every addSource failure path below either deletes the file directly
+        // or drives stop() (which always enqueues onEnded), and stopSession's
+        // dispose loop reclaims any leftover chains entry on session end.
+        chains.append((source, chain, resolved.tap, fileName))
         do {
             try store.save(updated, to: folder)
             self.manifest = updated
         } catch {
-            // Save failed after start succeeded: stop the chain and rethrow.
-            // stemEnded's later onEnded finds no stem for this source in the
-            // on-disk manifest (never saved) — no manifest/stem debris — and
-            // reclaims the tracked chain entry.
+            // Save failed after start succeeded: stop the chain, dispose the
+            // tap, and delete the orphaned stem file DIRECTLY (deterministic —
+            // don't rely on the async onEnded landing). The chain entry stays
+            // tracked so the later onEnded("startupFailed") finds it in
+            // stemEnded's failed-add branch, which re-deletes the
+            // (already-removed) file and un-tracks the entry; its tap was
+            // disposed here, so nil it out to keep stemEnded's dispose a no-op.
+            // No manifest debris: the on-disk manifest never gained the stem
+            // (the save failed before the in-memory manifest was updated).
             chain.stop(reason: "startupFailed")
+            resolved.tap?.dispose()
+            if let idx = chains.firstIndex(where: { $0.source.id == sourceID }) {
+                chains[idx].tap = nil
+            }
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
             throw error
         }
     }
