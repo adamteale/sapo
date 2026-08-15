@@ -74,4 +74,6 @@ final class StemWriter {
 
     /// For IOProc error paths — never throws, never fails stop.
     func closeQuietly() { close() }
+
+    deinit { close() }
 }

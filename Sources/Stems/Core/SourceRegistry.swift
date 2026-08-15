@@ -18,12 +18,39 @@ final class SourceRegistry {
             guard let pidInt = AudioProperty.readUInt32(objectID: objectID, selector: kAudioProcessPropertyPID) else { return nil }
             let pid = pid_t(pidInt)
             let bundleID = AudioProperty.readString(objectID: objectID, selector: kAudioProcessPropertyBundleID)
-            let name = NSRunningApplication(processIdentifier: pid)?.localizedName
-                ?? bundleID?.components(separatedBy: ".").last
-                ?? "Process \(pid)"
+            let name = Self.displayName(pid: pid, bundleID: bundleID)
             return AudioProcessSnapshot(objectID: objectID, pid: pid,
                                         bundleID: bundleID, processName: name)
         }
+    }
+
+    /// Human-readable process name: localized app name → bundle ID tail →
+    /// executable file name → "Process <pid>". Empty strings are treated as
+    /// absent: bundle-less CLI processes (e.g. `afplay`) expose "" for both
+    /// localizedName and bundleID, which otherwise collapsed into nameless
+    /// groups (Task 6 smoke protocol requires afplay to show by name).
+    private static func displayName(pid: pid_t, bundleID: String?) -> String {
+        if let app = NSRunningApplication(processIdentifier: pid),
+           let localized = app.localizedName, !localized.isEmpty {
+            return localized
+        }
+        if let bundle = bundleID, !bundle.isEmpty,
+           let tail = bundle.components(separatedBy: ".").last, !tail.isEmpty {
+            return tail
+        }
+        if let exec = executableName(pid: pid) {
+            return exec
+        }
+        return "Process \(pid)"
+    }
+
+    private static func executableName(pid: pid_t) -> String? {
+        // PROC_PIDPATHINFO_MAXSIZE (4096) is a C macro unavailable to Swift.
+        var path = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return nil }
+        let fullPath = String(cString: path)
+        guard let last = fullPath.split(separator: "/").last, !last.isEmpty else { return nil }
+        return String(last)
     }
 
     func currentAppSources() -> [SourceDescriptor] {

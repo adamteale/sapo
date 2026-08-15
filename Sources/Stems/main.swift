@@ -27,6 +27,19 @@ func runCLI() -> Int32? {
         print("MICROPHONES")
         for m in mics { print("  \(m.id)\t\(m.name)") }
         return 0
+    case "--record-app":
+        // --record-app <bundleID> --seconds N --out DIR
+        guard args.count >= 3 else { return 64 }
+        let bundleID = args[2]
+        let seconds = Double(flagValue("--seconds", in: args, default: "5")) ?? 5
+        let outDir = URL(fileURLWithPath: flagValue("--out", in: args, default: NSTemporaryDirectory()))
+        try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        return RecordCLI.recordApp(bundleID: bundleID, seconds: seconds, outDir: outDir)
+    case "--record-mic":
+        let seconds = Double(flagValue("--seconds", in: args, default: "5")) ?? 5
+        let outDir = URL(fileURLWithPath: flagValue("--out", in: args, default: NSTemporaryDirectory()))
+        try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        return RecordCLI.recordMic(seconds: seconds, outDir: outDir)
     default:
         FileHandle.standardError.write("unknown command \(command)\n".data(using: .utf8)!)
         return 64
