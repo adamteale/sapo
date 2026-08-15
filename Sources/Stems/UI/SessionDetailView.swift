@@ -83,8 +83,36 @@ struct SessionDetailView: View {
             let files = try sessionsModel.export(session: session, selectedStemIDs: selectedStemIDs,
                                                  scope: scope, format: format, to: url)
             exportMessage = "Exported \(files.count) file(s) to \(url.lastPathComponent)"
+            promptForStemCleanup(after: files)
         } catch {
             exportMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Combined export frees the session's stems only when the user allows it
+    /// (per the stemCleanup setting). The exported mix is always kept.
+    private func promptForStemCleanup(after files: [URL]) {
+        let behavior = model.settings.stemCleanup
+        guard scope == .combined,
+              behavior != .never,
+              files.contains(where: { $0.lastPathComponent.contains("Mix") }) else { return }
+        let doDelete: Bool
+        switch behavior {
+        case .always:
+            doDelete = true
+        case .ask:
+            let alert = NSAlert()
+            alert.messageText = "Delete the session's stems?"
+            alert.informativeText = "The exported mix is kept. Stems free up \(ByteCountFormatter.string(fromByteCount: session.sizeBytes, countStyle: .file))."
+            alert.addButton(withTitle: "Delete Stems")
+            alert.addButton(withTitle: "Keep")
+            doDelete = alert.runModal() == .alertFirstButtonReturn
+        case .never:
+            doDelete = false
+        }
+        if doDelete {
+            try? sessionsModel.deleteStems(for: session, store: model.store)
+            sessionsModel.reload(store: model.store)
         }
     }
 }

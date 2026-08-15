@@ -2,13 +2,17 @@ import SwiftUI
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menu bar + wiring arrive in later tasks.
-    }
-}
+    var menuBar: MenuBarController?
 
-extension AppModel {
-    static let shared = AppModel()
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let model = AppModel.shared
+        menuBar = MenuBarController(model: model) {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.canBecomeMain {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
 }
 
 struct StemsApp: App {
@@ -22,6 +26,10 @@ struct StemsApp: App {
                 .frame(minWidth: 560, minHeight: 500)
         }
         .windowResizability(.contentSize)
+
+        Settings {
+            SettingsView(settings: AppModel.shared.settings, model: AppModel.shared)
+        }
     }
 }
 

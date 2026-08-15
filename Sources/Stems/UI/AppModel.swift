@@ -3,16 +3,11 @@ import Combine
 import AVFoundation
 import AppKit
 
-/// Minimal settings holder; Task 12 expands into a persisted SettingsStore.
-final class SettingsStore: ObservableObject {
-    @Published var stemFormat: StemFormat = .alac
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     let engine = RecorderEngine()
     let store = SessionStore()
-    let settings = SettingsStore()
+    let settings: SettingsStore
 
     @Published var appSources: [SourceDescriptor] = []
     @Published var micSources: [SourceDescriptor] = []
@@ -22,7 +17,10 @@ final class AppModel: ObservableObject {
     private let registry = SourceRegistry()
     private var cancellables: Set<AnyCancellable> = []
 
-    init() {
+    static let shared = AppModel()
+
+    init(settings: SettingsStore = SettingsStore()) {
+        self.settings = settings
         // Forward engine state changes (recording started/stopped, meter levels)
         // to this model so views observing only AppModel stay in sync.
         engine.objectWillChange
