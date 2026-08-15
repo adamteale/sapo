@@ -46,7 +46,12 @@ DMG=1 ./scripts/build-app.sh
   opens the main window so you can pick them.
 - **Main window (Recorder)** — select any combination of apps and the
   microphone, then press **Record**. Live level meters move while recording;
-  the timer counts up. **Stop** ends the session.
+  the timer counts up. **Stop** ends the session. Every source row shows a
+  live VU meter while the window is open (even with nothing recording; meters
+  shut off when the window closes), and the checkboxes stay live mid-session:
+  ticking a source mid-recording adds a stem whose `startTime` post-dates the
+  session start, unticking one ends its stem early with `endEvent
+  "userRemoved"` in the manifest while the rest of the session continues.
 - **Sessions** — every recording is saved as its own session folder under
   `~/Music/Stems`:
 
@@ -79,6 +84,9 @@ DMG=1 ./scripts/build-app.sh
 
   # Record 10 seconds from the default microphone
   ./Stems --record-mic --seconds 10 --out /tmp
+
+  # Meter one source for 10 seconds (bars to stdout, no file written)
+  ./Stems --meter com.google.Chrome --seconds 10
   ```
 
 ## Troubleshooting

@@ -20,3 +20,13 @@
     (If impractical, verify code path via unit-injected small threshold.)
 15. Menu bar: Record with no prior selection opens window; red icon while recording.
 16. Close the main window, then click Open Stems… in the menu bar — the window reappears.
+17. Idle meters: with the window open and nothing recording, play audio in a
+    browser — its row's meter bounces; stop playback — it falls flat.
+18. Window gate: close (hide) the window — no meter processes remain
+    (`--list-taps` still fine, CPU drops); reopen — meters resume.
+19. Mid-session add: start recording mic only; tick a playing browser — a new
+    stem appears in the session folder; manifest shows its later startTime.
+20. Mid-session remove: untick the browser mid-recording — its stem ends with
+    endEvent "userRemoved"; mic keeps recording; combined export aligns both.
+21. Meter permission: fresh install, first window open triggers the mic prompt
+    once; deny → permission bar; grant via Settings + Retry → meters start.
