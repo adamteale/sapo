@@ -189,3 +189,4 @@ final class AppModel: ObservableObject {
         engine.stopSession()
     }
 }
+

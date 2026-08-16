@@ -89,6 +89,24 @@ DMG=1 ./scripts/build-app.sh
   ./Stems --meter com.google.Chrome --seconds 10
   ```
 
+## Running dev builds (important)
+
+On current macOS, an app launched normally (Finder/Dock) can receive **silent
+process taps** — microphone capture works but per-application taps deliver
+silence, even with microphone permission granted. The same binary launched as
+a Terminal child receives tap audio normally (the launch context, i.e. the
+"responsible process", decides). This is a platform gate, not a bug in Stems.
+
+Until Stems is distributed with a proper Developer ID + notarization:
+
+```bash
+./scripts/build-app.sh          # build the app
+open scripts/run-stems.command  # double-clickable launcher (Terminal context)
+```
+
+The launcher detaches, so the Terminal window can be closed once Stems is
+running. Re-launch this way after every rebuild.
+
 ## Troubleshooting
 
 - **No sources listed** — apps appear under *Applications* only while they are
