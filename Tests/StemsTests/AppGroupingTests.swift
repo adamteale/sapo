@@ -100,3 +100,24 @@ import Testing
         #expect(sources[0].appBundlePath == nil)
     }
 }
+
+@Suite("WebKit GPU labeling") struct WebKitGPULabelTests {
+    @Test func webkitGPURowGetsSharedAudioHint() {
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 300, bundleID: "com.apple.WebKit.GPU",
+                                 processName: "Ollama Graphics and Media", appBundlePath: nil),
+        ]
+        let sources = appSources(from: procs, excludedBundleIDs: [])
+        #expect(sources.count == 1)
+        #expect(sources[0].name.contains("Ollama Graphics and Media"))
+        #expect(sources[0].name.contains("shared Safari/WebKit audio"))
+    }
+
+    @Test func ordinaryAppsGetNoHint() {
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "us.zoom.xos",
+                                 processName: "zoom.us", appBundlePath: "/Applications/zoom.us.app"),
+        ]
+        #expect(appSources(from: procs, excludedBundleIDs: []).first?.name == "zoom.us")
+    }
+}

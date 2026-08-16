@@ -110,5 +110,12 @@ func appSources(from processes: [AudioProcessSnapshot], excludedBundleIDs: Set<S
                                         bundleIdentifier: nil, deviceUID: nil, appBundlePath: nil))
     }
 
+    // WebKit renders audio for Safari and other WebKit apps in one shared
+    // GPU process — its row captures all WebKit audio, not one app's. Label
+    // it so Safari users can find their audio.
+    if let idx = sources.firstIndex(where: { $0.id == "com.apple.WebKit.GPU" }) {
+        sources[idx].name += " — shared Safari/WebKit audio"
+    }
+
     return sources.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 }
