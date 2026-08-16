@@ -19,8 +19,10 @@ final class SourceRegistry {
             let pid = pid_t(pidInt)
             let bundleID = AudioProperty.readString(objectID: objectID, selector: kAudioProcessPropertyBundleID)
             let name = Self.displayName(pid: pid, bundleID: bundleID)
+            let appPath = NSRunningApplication(processIdentifier: pid)?.bundleURL?.path
             return AudioProcessSnapshot(objectID: objectID, pid: pid,
-                                        bundleID: bundleID, processName: name)
+                                        bundleID: bundleID, processName: name,
+                                        appBundlePath: appPath)
         }
     }
 
@@ -87,15 +89,50 @@ final class SourceRegistry {
 
 extension SourceRegistry {
     /// Resolve ANY app SourceDescriptor to its current process object IDs.
-    /// Bundle-based sources match by bundle ID; name-grouped (bundle-less)
-    /// sources match by display name.
+    /// Primary match: host .app bundle path (folds Chromium/Electron helpers
+    /// into the parent app's tap — they share the parent's bundle path).
+    /// Legacy descriptors (v0.1.0 manifests, no path): bundle ID equality plus
+    /// the helper convention prefix ("<parent>.helper…"), then name matching
+    /// for bundle-less sources.
     func processObjectIDs(for source: SourceDescriptor) -> [AudioObjectID] {
-        let snapshots = processObjectSnapshots().filter {
-            if let bundle = $0.bundleID, !bundle.isEmpty {
-                return bundle == source.bundleIdentifier && bundle == source.id
+        let snapshots = processObjectSnapshots()
+        let matched: [AudioProcessSnapshot]
+        if let sourcePath = source.appBundlePath {
+            // Compare on normalized top-level paths: nested helper .app paths
+            // fold onto the parent app's identity.
+            let byPath = snapshots.filter {
+                $0.appBundlePath.flatMap(topLevelAppBundlePath) == sourcePath
             }
-            return $0.processName == source.name
+            if !byPath.isEmpty {
+                // ALSO fold in path-less helpers (nil bundleURL from
+                // NSRunningApplication) whose bundle ID is a helper of any
+                // path-group member — grouping already treats them as the
+                // same application; resolution must match.
+                let groupBundles = Set(byPath.compactMap(\.bundleID))
+                var matchedAll = byPath
+                for snap in snapshots where snap.appBundlePath == nil {
+                    if let bundle = snap.bundleID,
+                       groupBundles.contains(where: { bundle.hasPrefix($0 + ".") }) {
+                        matchedAll.append(snap)
+                    }
+                }
+                matched = matchedAll
+            } else {
+                matched = snapshots.filter(legacyBundleMatch(source: source))
+            }
+        } else {
+            matched = snapshots.filter(legacyBundleMatch(source: source))
         }
-        return snapshots.map { AudioObjectID($0.objectID) }
+        return matched.map { AudioObjectID($0.objectID) }
+    }
+
+    private func legacyBundleMatch(source: SourceDescriptor) -> (AudioProcessSnapshot) -> Bool {
+        { snapshot in
+            if let bundle = snapshot.bundleID, !bundle.isEmpty {
+                guard let parent = source.bundleIdentifier, parent == source.id else { return false }
+                return bundle == parent || bundle.hasPrefix(parent + ".")
+            }
+            return snapshot.processName == source.name
+        }
     }
 }

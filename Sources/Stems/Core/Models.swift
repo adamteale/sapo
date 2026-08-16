@@ -11,6 +11,9 @@ struct SourceDescriptor: Codable, Hashable, Identifiable {
     var name: String
     var bundleIdentifier: String?
     var deviceUID: String?
+    /// Host .app bundle path for application sources — the helper-folding
+    /// identity. Optional so v0.1.0 manifests (without it) still decode.
+    var appBundlePath: String? = nil
 }
 
 enum StemFormat: String, Codable, CaseIterable {

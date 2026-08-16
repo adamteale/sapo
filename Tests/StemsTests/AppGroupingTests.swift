@@ -46,3 +46,57 @@ import Testing
         #expect(appSources(from: procs, excludedBundleIDs: []).map(\.name) == ["Alpha", "Zeta"])
     }
 }
+
+@Suite("App bundle-path grouping") struct AppBundlePathGroupingTests {
+    @Test func chromiumHelpersFoldIntoParentRow() {
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "com.brave.Browser",
+                                 processName: "Brave Browser", appBundlePath: "/Applications/Brave Browser.app"),
+            // Chromium helpers are nested .app bundles inside the parent's Frameworks folder.
+            AudioProcessSnapshot(objectID: 2, pid: 101, bundleID: "com.brave.Browser.helper",
+                                 processName: "helper", appBundlePath: "/Applications/Brave Browser.app/Contents/Frameworks/Brave Browser Framework.framework/Versions/151.1.93.136/Helpers/Brave Browser Helper.app"),
+            // Some helpers have no NSRunningApplication record at all (nil path) —
+            // they fold in via the bundle-prefix pass.
+            AudioProcessSnapshot(objectID: 3, pid: 102, bundleID: "com.brave.Browser.helper",
+                                 processName: "helper", appBundlePath: nil),
+        ]
+        let sources = appSources(from: procs, excludedBundleIDs: [])
+        #expect(sources.count == 1)
+        #expect(sources[0].id == "com.brave.Browser")           // parent bundle id wins
+        #expect(sources[0].name == "Brave Browser")             // parent display name wins
+        #expect(sources[0].appBundlePath == "/Applications/Brave Browser.app")
+    }
+
+    @Test func helperAloneStillListedWithParentPath() {
+        // Parent not producing audio; only the helper appears.
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 101, bundleID: "com.brave.Browser.helper",
+                                 processName: "helper", appBundlePath: "/Applications/Brave Browser.app"),
+        ]
+        let sources = appSources(from: procs, excludedBundleIDs: [])
+        #expect(sources.count == 1)
+        #expect(sources[0].appBundlePath == "/Applications/Brave Browser.app")
+    }
+
+    @Test func distinctAppsOnDifferentPathsStaySeparate() {
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "com.brave.Browser",
+                                 processName: "Brave Browser", appBundlePath: "/Applications/Brave Browser.app"),
+            AudioProcessSnapshot(objectID: 2, pid: 200, bundleID: "us.zoom.xos",
+                                 processName: "zoom.us", appBundlePath: "/Applications/zoom.us.app"),
+        ]
+        #expect(appSources(from: procs, excludedBundleIDs: []).count == 2)
+    }
+
+    @Test func pathlessProcessesFallBackToBundleGrouping() {
+        // Old behavior preserved for processes without an .app path (system daemons).
+        let procs = [
+            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "com.apple.PowerChime",
+                                 processName: "PowerChime", appBundlePath: nil),
+        ]
+        let sources = appSources(from: procs, excludedBundleIDs: [])
+        #expect(sources.count == 1)
+        #expect(sources[0].id == "com.apple.PowerChime")
+        #expect(sources[0].appBundlePath == nil)
+    }
+}
