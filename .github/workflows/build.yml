@@ -13,13 +13,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build DMG
-        run: |
-          VERSION="${{ github.sha }}-$(date +%Y%m%d)" ./scripts/build-app.sh DMG=1
+        env:
+          VERSION: ${{ github.sha }}-$(date +%Y%m%d)
+          DMG: 1
+        run: ./scripts/build-app.sh
+
+      - name: Set tag
+        id: tag
+        run: echo "tag=v$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.sha }}
+          tag_name: ${{ steps.tag.outputs.tag }}
           name: Sapo ${{ github.sha }}
           body: |
             Auto-built from commit `${{ github.sha }}` on ${{ github.event.head_commit.timestamp }}.
