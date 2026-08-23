@@ -1,0 +1,23 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DMG
+        run: |
+          VERSION="${{ github.sha }}-$(date +%Y%m%d)" ./scripts/build-app.sh DMG=1
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sapo
+          path: build/Sapo-*.dmg
