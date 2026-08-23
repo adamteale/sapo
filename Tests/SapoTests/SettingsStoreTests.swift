@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("SettingsStore") struct SettingsStoreTests {
     @Test func roundTripsThroughUserDefaults() {

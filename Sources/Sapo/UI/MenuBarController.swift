@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// Menu bar (status item) controller: waveform icon when idle, red dot while
-/// recording, and a menu with Record/Stop (with elapsed time), Open Stems, and
+/// recording, and a menu with Record/Stop (with elapsed time), Open Sapo, and
 /// Quit. The menu is rebuilt whenever the engine state changes and once per
 /// second while recording so the elapsed time stays fresh.
 @MainActor
@@ -16,7 +16,7 @@ final class MenuBarController: NSObject {
         self.model = model
         self.openWindow = openWindow
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Stems")
+        statusItem.button?.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Sapo")
         rebuildMenu()
         model.engine.$state
             .receive(on: DispatchQueue.main)
@@ -67,10 +67,10 @@ final class MenuBarController: NSObject {
         }
 
         menu.addItem(.separator())
-        let open = NSMenuItem(title: "Open Stems…", action: #selector(openTapped), keyEquivalent: "o")
+        let open = NSMenuItem(title: "Open Sapo…", action: #selector(openTapped), keyEquivalent: "o")
         open.target = self
         menu.addItem(open)
-        let quit = NSMenuItem(title: "Quit Stems", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Sapo", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
 
         statusItem.menu = menu
@@ -107,7 +107,7 @@ final class MenuBarController: NSObject {
         alert.addButton(withTitle: "OK")
         alert.runModal()
         // Bring the recorder window forward so the user can fix the cause
-        // (e.g. select sources) — same path as Open Stems….
+        // (e.g. select sources) — same path as Open Sapo….
         NSApp.activate(ignoringOtherApps: true)
         openWindow()
     }

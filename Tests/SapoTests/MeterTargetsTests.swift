@@ -1,5 +1,5 @@
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("meterTargets") struct MeterTargetsTests {
     @Test func windowClosedMeansNoTargets() {

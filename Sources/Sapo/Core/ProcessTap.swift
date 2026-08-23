@@ -30,9 +30,9 @@ struct ProcessTapSession {
             throw StemWriterError.status(createStatus, "AudioHardwareCreateProcessTap")
         }
 
-        let aggregateUID = "Stems.Tap.\(UUID().uuidString)"
+        let aggregateUID = "Sapo.Tap.\(UUID().uuidString)"
         let description: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Stems — \(name)",
+            kAudioAggregateDeviceNameKey: "Sapo — \(name)",
             kAudioAggregateDeviceUIDKey: aggregateUID,
             // The output device drives the tap's clock. (The brief's
             // kAudioAggregateDeviceMainDeviceKey constant does not exist in this

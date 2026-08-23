@@ -16,7 +16,7 @@ final class AppModel: ObservableObject {
     @Published var micSources: [SourceDescriptor] = []
     @Published var selectedSourceIDs: Set<String> = []
     @Published var permissionDenied = false
-    /// Window-visibility gate: meter taps only run while the Stems window is
+    /// Window-visibility gate: meter taps only run while the Sapo window is
     /// on screen (hide-on-close keeps the window in NSApp.windows with
     /// isVisible == false while hidden — that's the signal). Driven by
     /// AppDelegate's key/occlusion notifications via windowVisibilityChanged.
@@ -60,14 +60,14 @@ final class AppModel: ObservableObject {
         return Int64(Double(selectedSourceIDs.count) * wavBytesPerSecond * factor * 3600)
     }
 
-    /// True while the Stems window is on screen. Hide-on-close keeps the
+    /// True while the Sapo window is on screen. Hide-on-close keeps the
     /// window in NSApp.windows but orderOut sets isVisible == false — so this
     /// is the visibility signal the window gate keys on (onDisappear is never
     /// used, per the plan).
     ///
     /// The window is identified structurally, not by title: its title tracks
     /// the selected tab's navigationTitle ("Recorder"/"Sessions"/session
-    /// title), never "Stems". This app is LSUIElement with exactly one regular
+    /// title), never "Sapo". This app is LSUIElement with exactly one regular
     /// window, so a visible window that can become main is precisely it.
     static func stemsWindowVisible() -> Bool {
         NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }

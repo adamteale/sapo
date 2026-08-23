@@ -3,12 +3,12 @@ import AppKit
 
 /// Hide-on-close window policy. We chose this over the `newWindowForTab:`
 /// fallback because hiding preserves the window's identity and state (the
-/// same NSWindow comes back on Open Stems…), whereas the sendAction fallback
+/// same NSWindow comes back on Open Sapo…), whereas the sendAction fallback
 /// would create a fresh SwiftUI window whose scene state may not line up with
 /// the original. This app is LSUIElement, so there is no Dock "reopen"
 /// affordance; without this delegate the main window is unrecoverable once
 /// closed (WindowGroup windows are not recreatable from AppKit side), which
-/// would strand both the menu-bar Open Stems… item and the Record-with-no-
+/// would strand both the menu-bar Open Sapo… item and the Record-with-no-
 /// selection path.
 final class HideOnCloseWindowDelegate: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // always order it front again.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let mainWindow = NSApp.windows.first(where: { $0.title == "Stems" })
+            let mainWindow = NSApp.windows.first(where: { $0.title == "Sapo" })
                 ?? NSApp.windows.first(where: { $0.canBecomeMain })
             mainWindow?.delegate = self.hideOnClose
             // Initial gate evaluation: SwiftUI created the window before this
@@ -74,13 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-struct StemsApp: App {
-    // NOTE: no @main here — main.swift calls StemsApp.main() (SwiftPM executables
+struct SapoApp: App {
+    // NOTE: no @main here — main.swift calls SapoApp.main() (SwiftPM executables
     // only allow top-level code in main.swift).
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup("Stems") {
+        WindowGroup("Sapo") {
             MainTabs(model: AppModel.shared)
                 .frame(minWidth: 560, minHeight: 500)
         }

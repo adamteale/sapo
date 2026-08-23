@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("MixerEdge") struct MixerEdgeTests {
     static func makeBuffer(rate: Double, seconds: Double, value: Float, channels: AVAudioChannelCount = 1) -> AVAudioPCMBuffer {

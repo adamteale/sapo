@@ -9,7 +9,7 @@ final class MeterChain {
     private let deviceID: AudioObjectID
     private let scope: AudioObjectPropertyScope
     private let bytesPerFrame: Int
-    private let teardownQueue = DispatchQueue(label: "com.stemsapp.Stems.meterTeardown")
+    private let teardownQueue = DispatchQueue(label: "com.sapomac.Sapo.meterTeardown")
     private var ioProcID: AudioDeviceIOProcID?
     private var lastMeterAt: Double = 0
     private var ended = false          // teardownQueue-confined (see stop())

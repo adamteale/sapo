@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("SourceRegistry naming") struct SourceNamingTests {
     @Test func shorterProcessNameWinsAsDisplayName() {

@@ -1,129 +1,84 @@
-# Stems
+# Sapo
 
-A simple native macOS app for recording audio from multiple system sources —
-individual applications (Chrome, Zoom, Spotify…) and the microphone — as
-independent, aligned stems within one session, then mixing and exporting after
-the session. Primary use case: recording online meetings for later
-transcription.
+> Record every app on your Mac as separate, aligned tracks — mix and export after.
 
-Stems records **non-destructively**: Core Audio process taps copy audio while it
-keeps playing normally. No virtual audio devices, no rerouting, no silence.
+![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-000000?logo=apple&logoColor=white)
+![Swift 5](https://img.shields.io/badge/Swift-5-F05138?logo=swift)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
+Sapo is a native macOS audio recorder that captures audio from every running application and your microphone as **independent, time-aligned stems**. You record the whole session, then decide which sources to keep, export as a combined mix, grouped stems, or individual tracks — in M4A or WAV.
+
+## Why Sapo
+
+Meeting recordings should capture everything, not just what you remembered to unmute. Virtual audio routers (BlackHole, Loopback) reroute audio and mute your original output — Sapo uses macOS's native process-tap API to **listen without interfering**. Your apps keep playing normally; Sapo records in the background.
+
+## Features
+
+- **Per-application capture** — Chrome, Zoom, Slack, Spotify… one click each
+- **Microphone capture** — built-in or external mic
+- **Live VU meters** on every source — see what's making sound before you record
+- **Record everything, decide later** — stems are saved independently and time-aligned
+- **Export after the fact** — combined mix, grouped (apps vs mic), or individual tracks
+- **Non-destructive** — audio keeps playing normally; no virtual devices, no silence
+- **Works mid-session** — join or leave sources while recording
+- **Menu-bar control** — quick Record/Stop with elapsed time, even from any app
+- **Window-gated meters** — VU meters only run while the window is visible (battery-friendly)
 
 ## Requirements
 
-- macOS 14.4+ (Sonoma) — the public Core Audio Process Tap API requires it.
-- Xcode command-line tools (`xcode-select --install`) for building from source.
+- macOS 14.4 (Sonoma) or later
+- Microphone access (granted on first launch)
 
-## Build
+## Install
+
+Download the latest `.dmg` from [Releases](../../releases).
+
+**First launch:** right-click the app → **Open** → click **Open** in the dialog (this is macOS Gatekeeper protecting you from unsigned apps — it only happens once). Then approve the microphone permission when prompted.
+
+## Building from source
 
 ```bash
-# Plain build (debug)
-swift build
-
-# Ad-hoc signed .app bundle in build/
+git clone https://github.com/<you>/sapo.git
+cd sapo
+swift build -c release
 ./scripts/build-app.sh
-
-# App bundle + distributable DMG in build/
-DMG=1 ./scripts/build-app.sh
 ```
 
-## First run
+### Running dev builds
 
-1. Launch `Stems.app` (or run `swift run`).
-2. **Ad-hoc builds are not notarized**: on first launch macOS will block the
-   app — right-click the app in Finder and choose **Open**, then **Open** again
-   in the confirmation dialog.
-3. Approve the microphone permission prompt the first time you record. If you
-   deny it, use the banner in the app to jump to System Settings → Privacy &
-   Security → Microphone and enable Stems, then hit **Retry**.
-4. Start playing audio in an app you want to record (a browser, a call, music),
-   then press **Refresh** so its name appears under *Applications*.
+On some macOS configurations (particularly MDM-managed Macs), apps launched normally through Finder or the Dock may receive silent process taps — microphone capture works, but per-application taps deliver silence. The same binary launched as a Terminal child receives tap audio normally.
 
-## Usage
-
-- **Menu bar icon** — quick access: start/stop recording (a red icon shows
-  while recording) and open the window. If no sources are selected, Record
-  opens the main window so you can pick them.
-- **Main window (Recorder)** — select any combination of apps and the
-  microphone, then press **Record**. Live level meters move while recording;
-  the timer counts up. **Stop** ends the session. Every source row shows a
-  live VU meter while the window is open (even with nothing recording; meters
-  shut off when the window closes), and the checkboxes stay live mid-session:
-  ticking a source mid-recording adds a stem whose `startTime` post-dates the
-  session start, unticking one ends its stem early with `endEvent
-  "userRemoved"` in the manifest while the rest of the session continues.
-- **Sessions** — every recording is saved as its own session folder under
-  `~/Music/Stems`:
-
-  ```
-  ~/Music/Stems/
-  └── Session 2026-08-15 16.30.00/
-      ├── manifest.json        # session metadata (crash-safe: written at start)
-      ├── stem-0-Google Chrome.caf   # per-source ALAC stem
-      └── stem-1-MacBook Pro Mic.caf
-  ```
-
-  Stems are written as ALAC (`.caf`) by default; switch to WAV (`.wav`) in
-  Settings. Sessions survive app crashes and app quits mid-recording.
-
-- **Export** — open a session, preview any stem, and export:
-  - *Combined* — every stem mixed into one file (M4A or WAV).
-  - *Grouped* — one file for Applications, one for Microphone.
-  - *Individual* — one file per source.
-  Export runs after the session, so you can pick tracks and levels without
-  losing anything at record time.
-
-- **CLI** — headless capture for scripting:
-
-  ```bash
-  # List what is capturable right now (apps must be playing audio)
-  ./Stems --list-taps
-
-  # Record 5 seconds from one app into /tmp
-  ./Stems --record-app com.google.Chrome --seconds 5 --out /tmp
-
-  # Record 10 seconds from the default microphone
-  ./Stems --record-mic --seconds 10 --out /tmp
-
-  # Meter one source for 10 seconds (bars to stdout, no file written)
-  ./Stems --meter com.google.Chrome --seconds 10
-  ```
-
-## Running dev builds (important)
-
-On current macOS, an app launched normally (Finder/Dock) can receive **silent
-process taps** — microphone capture works but per-application taps deliver
-silence, even with microphone permission granted. The same binary launched as
-a Terminal child receives tap audio normally (the launch context, i.e. the
-"responsible process", decides). This is a platform gate, not a bug in Stems.
-
-Until Stems is distributed with a proper Developer ID + notarization:
+The launcher script starts Sapo in the working context:
 
 ```bash
-./scripts/build-app.sh          # build the app
-open scripts/run-stems.command  # double-clickable launcher (Terminal context)
+open scripts/run-sapo.command
 ```
 
-The launcher detaches, so the Terminal window can be closed once Stems is
-running. Re-launch this way after every rebuild.
+This opens a Terminal window, launches Sapo, and detaches — you can close the Terminal window once Sapo is running.
 
-## Troubleshooting
+## How it works
 
-- **No sources listed** — apps appear under *Applications* only while they are
-  actually producing audio. Start playback first, then press **Refresh*.
-- **A selected app records nothing** — if the app stops making sound mid-session
-  its stem ends (marked `processExited` in the manifest) while the rest of the
-  session continues.
-- **Low disk space** — Stems estimates the session's size (up to 2 hours per
-  source) before starting and refuses to record if the volume can't hold it;
-  the reason is shown in red under the controls.
-- **Microphone missing** — check System Settings → Privacy & Security →
-  Microphone, and that the input device is present in Audio MIDI Setup.
+Sapo uses macOS's native Core Audio process-tap API (available since macOS 14.4) to create private aggregate devices for each source. Audio flows through these taps into per-source ALAC or WAV files, all time-aligned to the session start. A `manifest.json` tracks which sources were active, their format, and any mid-session joins/leaves.
+
+Export happens post-session: Sapo reads the manifest and the individual stem files, then mixes them into the format you choose (combined, grouped by source type, or individual) using only native AVFoundation codecs.
+
+## Limitations
+
+- **Safari audio** is shared via WebKit's GPU process — Sapo labels it clearly in the UI so you know what you're capturing
+- **Per-tab capture** would require browser extensions — a future feature
+- **No transcription** — Sapo produces audio files; transcription is left to dedicated tools (export stems and feed them to Whisper, otter.ai, etc.)
 
 ## Roadmap
 
-Design doc (spec, roadmap, module boundaries):
-[`docs/superpowers/specs/2026-08-15-stems-audio-recorder-design.md`](docs/superpowers/specs/2026-08-15-stems-audio-recorder-design.md)
+- [ ] Per-app volume sliders during recording
+- [ ] Transcription export (Whisper, AssemblyAI)
+- [ ] Tab-level capture via browser extensions
+- [ ] Notarized distribution (Developer ID)
 
-Planned follow-ups include browser-extension tab sources and transcription
-export.
+## License
+
+MIT — see [LICENSE](LICENSE). Sapo is free for personal and commercial use.
+
+## Privacy
+
+**Audio never leaves your Mac.** Sapo has no network access, no analytics, no telemetry. Everything is stored locally in `~/Music/Sapo/`.

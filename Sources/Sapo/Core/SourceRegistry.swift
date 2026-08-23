@@ -5,7 +5,7 @@ import CoreAudio
 /// Discovers recordable sources (apps producing audio + input devices) from Core Audio.
 final class SourceRegistry {
     static let excludedBundleIDs: Set<String> = [
-        "com.stemsapp.Stems",          // never record ourselves
+        "com.sapomac.Sapo",            // never record ourselves
         "com.apple.audio.CoreAudioServer",
         "com.apple.audioserverd",
     ]

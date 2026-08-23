@@ -32,7 +32,7 @@ final class CaptureChain {
     private let bytesPerFrame: Int          // hoisted from the HAL read in make()
     private var ioProcID: AudioDeviceIOProcID?
     private var lastMeterAt: Double = 0
-    private let teardownQueue = DispatchQueue(label: "com.stemsapp.Stems.teardown")
+    private let teardownQueue = DispatchQueue(label: "com.sapomac.Sapo.teardown")
 
     var onLevel: ((Float) -> Void)?          // RMS 0...1, throttled to ~10 Hz
     var onEnded: ((String) -> Void)?         // called once when capture ends

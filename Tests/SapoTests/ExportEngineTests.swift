@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("ExportEngine") struct ExportEngineTests {
     /// Builds a real session folder with two WAV stems (test tones).

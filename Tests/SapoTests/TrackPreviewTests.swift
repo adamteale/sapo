@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("Sessions model helpers") struct TrackPreviewTests {
     @MainActor

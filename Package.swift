@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "Stems",
+    name: "Sapo",
     platforms: [.macOS("14.4")],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "Stems",
-            path: "Sources/Stems",
+            name: "Sapo",
+            path: "Sources/Sapo",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "StemsTests",
-            dependencies: ["Stems"],
-            path: "Tests/StemsTests",
+            name: "SapoTests",
+            dependencies: ["Sapo"],
+            path: "Tests/SapoTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

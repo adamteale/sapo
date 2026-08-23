@@ -11,7 +11,7 @@ final class SessionStore {
     static func defaultRoot() -> URL {
         let music = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
-        return music.appendingPathComponent("Stems", isDirectory: true)
+        return music.appendingPathComponent("Sapo", isDirectory: true)
     }
 
     static func coders() -> (JSONEncoder, JSONDecoder) {

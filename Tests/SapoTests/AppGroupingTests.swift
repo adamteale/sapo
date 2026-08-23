@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("AppGrouping") struct AppGroupingTests {
     @Test func mergesHelperProcessesByBundleID() {
@@ -19,10 +19,10 @@ import Testing
 
     @Test func excludesConfiguredBundleIDs() {
         let procs = [
-            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "com.stemsapp.Stems", processName: "Stems"),
+            AudioProcessSnapshot(objectID: 1, pid: 100, bundleID: "com.sapomac.Sapo", processName: "Sapo"),
             AudioProcessSnapshot(objectID: 2, pid: 101, bundleID: "us.zoom.xos", processName: "zoom.us"),
         ]
-        let sources = appSources(from: procs, excludedBundleIDs: ["com.stemsapp.Stems"])
+        let sources = appSources(from: procs, excludedBundleIDs: ["com.sapomac.Sapo"])
         #expect(sources.map(\.bundleIdentifier) == ["us.zoom.xos"])
     }
 

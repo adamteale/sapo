@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("SessionStore") struct SessionStoreTests {
     func makeStore() throws -> (SessionStore, URL) {

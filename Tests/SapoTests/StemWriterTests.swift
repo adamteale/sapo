@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 import Testing
-@testable import Stems
+@testable import Sapo
 
 @Suite("StemWriter") struct StemWriterTests {
     /// interleaved Float32 stereo ASBD like a tap provides

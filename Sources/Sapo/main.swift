@@ -6,7 +6,7 @@ if let code = runCLI() {
     exit(code)
 }
 
-StemsApp.main()
+SapoApp.main()
 
 func runCLI() -> Int32? {
     let args = CommandLine.arguments
