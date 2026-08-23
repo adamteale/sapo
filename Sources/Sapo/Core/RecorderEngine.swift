@@ -14,6 +14,10 @@ enum SessionStartError: Error, Equatable {
     /// `needed` is the greater of the caller's `minimumFreeBytes` and the
     /// 2-hour session estimate.
     case lowDisk(available: Int64, needed: Int64)
+    /// One or more sources could not be resolved — they were selected but not
+    /// producing audio (apps not playing, devices absent). `names` lists the
+    /// sources that could not be captured.
+    case unresolvedSources([String])
 }
 
 extension SessionStartError: LocalizedError {
@@ -24,6 +28,9 @@ extension SessionStartError: LocalizedError {
             fmt.countStyle = .file
             return "Not enough free disk space: \(fmt.string(fromByteCount: available)) free, "
                  + "but recording needs at least \(fmt.string(fromByteCount: needed))."
+        case .unresolvedSources(let names):
+            let list = names.joined(separator: ", ")
+            return "Could not capture \(names.count) source(s): \(list). Start audio in them and try again."
         }
     }
 }
@@ -157,7 +164,14 @@ final class RecorderEngine: ObservableObject {
         }
 
         // prune stems whose sources produced no chain (not playing / no device)
+        let pruned = manifest.stems.filter { stem in !built.contains { $0.source.id == stem.source.id } }
         manifest.stems = manifest.stems.filter { stem in built.contains { $0.source.id == stem.source.id } }
+
+        // If sources were silently dropped (not producing audio / device absent),
+        // throw so the user knows why recording didn't start.
+        if !pruned.isEmpty {
+            throw SessionStartError.unresolvedSources(pruned.map(\.source.name))
+        }
 
         // Ruling 1: real input-stream metadata from each chain, BEFORE the
         // first manifest save (the crash-safe start manifest).
@@ -173,6 +187,10 @@ final class RecorderEngine: ObservableObject {
         self.chains = built
         self.activeSessionFolder = folder
         self.levels = [:]
+
+        // Set up the workspace observer BEFORE starting chains so that if a
+        // tapped app terminates between chain starts, we catch its exit.
+        observeAppTermination()
 
         // Partial-start failure guard: chains 0..k-1 may already be running
         // with live IOProcs writing stems; the k-th chain's start() rolls back
@@ -206,8 +224,6 @@ final class RecorderEngine: ObservableObject {
             }
             throw error
         }
-
-        observeAppTermination()
 
         state = .recording(startedAt: manifest.startTime)
     }

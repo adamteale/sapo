@@ -64,7 +64,10 @@ struct ProcessTapSession {
     mutating func dispose() {
         guard !disposed else { return }
         disposed = true
-        AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+        // Destroy the process tap first — the aggregate device may still be
+        // referenced by an IOProc that reads from the tap. Destroying the
+        // aggregate first can cause a crash or hang.
         AudioHardwareDestroyProcessTap(tapID)
+        AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
     }
 }
