@@ -3,12 +3,12 @@ name: Build
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -16,8 +16,15 @@ jobs:
         run: |
           VERSION="${{ github.sha }}-$(date +%Y%m%d)" ./scripts/build-app.sh DMG=1
 
-      - name: Upload DMG
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Sapo
-          path: build/Sapo-*.dmg
+          tag_name: ${{ github.sha }}
+          name: Sapo ${{ github.sha }}
+          body: |
+            Auto-built from commit `${{ github.sha }}` on ${{ github.event.head_commit.timestamp }}.
+
+            > macOS 14.4+ · unsigned ad-hoc build. Right-click → Open the first time, then approve the microphone permission.
+          files: build/Sapo-*.dmg
+          draft: false
+          prerelease: true
