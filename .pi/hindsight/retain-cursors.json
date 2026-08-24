@@ -2,17 +2,21 @@
   "version": 3,
   "sessions": {
     "3831468049e359d6": {
-      "index": 1,
-      "chainHash": "98a5c43ed1edf24e781e5584ff273fd322284d492ed003528c4f03a230b823c3",
-      "idChainHash": "cd372fb85148700fa88095e3492d3f9f5beb43e555e5ff26d95f5a6adc36f8e6",
+      "index": 3,
+      "chainHash": "84645ac3da1733aa07a513ec4047bdc8af6f8313fb578656f29944996c360987",
+      "idChainHash": "f7d062d662826ed95869851db06bb539b402047baee53a00e0aa35bfbe98265d",
       "tailStart": 0,
       "messageIds": [
+        "",
+        "",
         "",
         ""
       ],
       "fingerprints": [
-        "20ff003a2d1537689373f097b5105dcdac927e6aa7991e5031368d07dd472260",
-        "a8b68a47ef34e2408c9bb56872960cb2226b49ebf9670ab51ad65b777a98893d"
+        "1c7fd7af7fdaf97f056ec2d93ccd000508ed08ad03edc15c64d944a68819cc2c",
+        "bdeeef02bb7e712a473c95f77014584e9f9b132dc27037fcd032e3a7c3fb7619",
+        "5ee20ac7d658da01c5f6398e5ae09f0759a88abde45e1c3854dd15ea8229b776",
+        "f51a56f0c47a6ebbf536f849b919825333e4c0d7906ae560214dc9c34eae544a"
       ]
     },
     "e3f34db3c7697f15": {

@@ -24,6 +24,9 @@ final class AppModel: ObservableObject {
     /// Last recording-start error (e.g. low disk), shown in the recorder view;
     /// cleared on the next Record tap.
     @Published var lastError: String?
+    /// Which tab is active (0 = Recorder, 1 = Sessions). Driven by MainTabs
+    /// so RecorderView can switch to Sessions after a recording ends.
+    @Published var activeTab = 0
 
     private let registry = SourceRegistry()
     private var cancellables: Set<AnyCancellable> = []
@@ -187,6 +190,8 @@ final class AppModel: ObservableObject {
 
     func stopRecording() {
         engine.stopSession()
+        // Auto-navigate to Sessions so the user sees the saved recording.
+        activeTab = 1
     }
 }
 

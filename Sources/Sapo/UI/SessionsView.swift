@@ -51,11 +51,13 @@ final class SessionsModel: ObservableObject {
     }
 
     func export(session: SessionSummary, selectedStemIDs: Set<UUID>,
-                scope: ExportScope, format: ExportFormat, to destination: URL) throws -> [URL] {
+                scope: ExportScope, format: ExportFormat, to destination: URL,
+                onProgress: ((Float) -> Void)? = nil) throws -> [URL] {
         try ExportEngine.export(ExportRequest(sessionFolder: session.folderURL,
                                               selectedStemIDs: selectedStemIDs,
                                               scope: scope, format: format,
-                                              destination: destination))
+                                              destination: destination,
+                                              onProgress: onProgress))
     }
 
     func deleteStems(for session: SessionSummary, store: SessionStore) throws {

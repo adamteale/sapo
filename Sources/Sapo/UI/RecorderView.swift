@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecorderView: View {
     @ObservedObject var model: AppModel
+    @State private var showStopConfirmation = false
 
     private var engine: RecorderEngine { model.engine }
 
@@ -79,7 +80,7 @@ struct RecorderView: View {
     private var controlsBar: some View {
         HStack {
             if isRecording {
-                Button("Stop", role: .destructive) { model.stopRecording() }
+                Button("Stop", role: .destructive) { showStopConfirmation = true }
                     .controlSize(.large)
                 Text(Self.format(elapsed))
                     .font(.system(.title3, design: .monospaced))
@@ -96,6 +97,12 @@ struct RecorderView: View {
                 .font(.callout).foregroundStyle(.secondary)
         }
         .padding()
+        .alert("End recording?", isPresented: $showStopConfirmation) {
+            Button("Stop", role: .destructive) { model.stopRecording() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All selected stems will be saved to the Sessions tab.")
+        }
     }
 
     @ViewBuilder private var permissionBar: some View {

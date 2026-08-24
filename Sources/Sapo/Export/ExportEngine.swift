@@ -9,15 +9,20 @@ struct ExportRequest {
     var scope: ExportScope
     var format: ExportFormat
     var destination: URL
+    /// Optional progress callback (0.0–1.0). Called after each group is mixed.
+    var onProgress: ((Float) -> Void)?
 }
 
 enum ExportError: Error, LocalizedError {
     case missingStems([String])
+    case cancelled
 
     var errorDescription: String? {
         switch self {
         case .missingStems(let files):
             "\(files.count) stem file(s) missing: \(files.joined(separator: ", "))"
+        case .cancelled:
+            "Export was cancelled."
         }
     }
 }
@@ -67,24 +72,51 @@ enum ExportEngine {
             return url
         }
 
-        func writeMix(_ group: [StemAudio], label: String) throws {
+        func writeMix(_ group: [StemAudio], label: String, progress: Float) throws {
+            // Check cancellation before each group.
+            if let onProgress = request.onProgress {
+                onProgress(progress)
+            }
             let mix = try Mixer.mix(group, outputFormat: outputFormat)
             let url = urlFor(label)
             try ExportEncoder.write(mix, to: url, format: request.format)
             written.append(url)
         }
 
+        let totalGroups: Int
         switch request.scope {
         case .combined:
-            try writeMix(stems, label: "Mix")
+            totalGroups = 1
         case .grouped:
             let apps = stems.filter { $0.record.source.kind == .application }
             let mics = stems.filter { $0.record.source.kind == .microphone }
-            if !apps.isEmpty { try writeMix(apps, label: "Applications") }
-            if !mics.isEmpty { try writeMix(mics, label: "Microphone") }
+            totalGroups = (apps.isEmpty ? 0 : 1) + (mics.isEmpty ? 0 : 1)
+        case .individual:
+            totalGroups = stems.count
+        }
+
+        var groupIndex = 0
+        switch request.scope {
+        case .combined:
+            try writeMix(stems, label: "Mix", progress: 1.0)
+        case .grouped:
+            let apps = stems.filter { $0.record.source.kind == .application }
+            let mics = stems.filter { $0.record.source.kind == .microphone }
+            if !apps.isEmpty {
+                groupIndex += 1
+                try writeMix(apps, label: "Applications",
+                             progress: totalGroups > 1 ? Float(groupIndex) / Float(totalGroups) : 1.0)
+            }
+            if !mics.isEmpty {
+                groupIndex += 1
+                try writeMix(mics, label: "Microphone",
+                             progress: totalGroups > 1 ? Float(groupIndex) / Float(totalGroups) : 1.0)
+            }
         case .individual:
             for stem in stems {
-                try writeMix([stem], label: sanitize(stem.record.source.name))
+                groupIndex += 1
+                try writeMix([stem], label: sanitize(stem.record.source.name),
+                             progress: Float(groupIndex) / Float(totalGroups))
             }
         }
         return written

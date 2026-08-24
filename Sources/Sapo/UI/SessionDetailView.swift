@@ -13,6 +13,8 @@ struct SessionDetailView: View {
     @State private var scope: ExportScope = .combined
     @State private var format: ExportFormat = .m4a
     @State private var exportMessage: String?
+    @State private var exportProgress: Float = 0
+    @State private var isExporting = false
 
     var body: some View {
         List {
@@ -35,7 +37,12 @@ struct SessionDetailView: View {
                     Text("WAV").tag(ExportFormat.wav)
                 }
                 Button("Export…") { runExport() }
-                    .disabled(selectedStemIDs.isEmpty)
+                    .disabled(selectedStemIDs.isEmpty || isExporting)
+                if isExporting {
+                    ProgressView(value: exportProgress)
+                        .progressViewStyle(.linear)
+                        .padding(.vertical, 4)
+                }
                 if let exportMessage { Text(exportMessage).font(.callout) }
             }
         }
@@ -79,14 +86,21 @@ struct SessionDetailView: View {
         panel.canCreateDirectories = true
         panel.message = "Choose export destination"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        isExporting = true
+        exportProgress = 0
+        exportMessage = nil
         do {
             let files = try sessionsModel.export(session: session, selectedStemIDs: selectedStemIDs,
-                                                 scope: scope, format: format, to: url)
+                                                 scope: scope, format: format, to: url,
+                                                 onProgress: { progress in
+                                                    self.exportProgress = progress
+                                                 })
             exportMessage = "Exported \(files.count) file(s) to \(url.lastPathComponent)"
             promptForStemCleanup(after: files)
         } catch {
             exportMessage = "Export failed: \(error.localizedDescription)"
         }
+        isExporting = false
     }
 
     /// Combined export frees the session's stems only when the user allows it

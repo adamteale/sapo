@@ -94,9 +94,8 @@ struct SapoApp: App {
 
 struct MainTabs: View {
     @ObservedObject var model: AppModel
-    @State private var tab = 0
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: $model.activeTab) {
             RecorderView(model: model).tabItem { Label("Recorder", systemImage: "record.circle") }.tag(0)
             SessionsView(model: model).tabItem { Label("Sessions", systemImage: "list.bullet") }.tag(1)
         }
