@@ -8,14 +8,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Initial load
+// Listen for capture status updates from background
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'captureStatus') {
+    if (message.recording) {
+      isRecording = true;
+      document.getElementById('status').textContent = 'Recording...';
+      updateButtons();
+    } else {
+      isRecording = false;
+      document.getElementById('status').textContent = message.error || 'Stopped';
+      updateButtons();
+    }
+  }
+});
+
+// Initial load - query active tabs
 chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
   renderTabs(tabs);
+});
+
+// Listen for tab updates (user switches tabs)
+chrome.tabs.onUpdated.addListener(() => {
+  chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+    renderTabs(tabs);
+  });
 });
 
 function renderTabs(tabs) {
   const list = document.getElementById('tabList');
   list.innerHTML = '';
+  
+  if (tabs.length === 0) {
+    list.innerHTML = '<div class="tab-item" style="color: #999;">No tabs available</div>';
+    return;
+  }
   
   tabs.forEach(tab => {
     const div = document.createElement('div');
@@ -38,33 +65,62 @@ function updateButtons() {
 document.getElementById('startBtn').onclick = async () => {
   if (!selectedTabId) return;
   
+  document.getElementById('status').textContent = 'Starting...';
+  
   try {
-    // Start tab capture in offscreen document
+    // Get media stream ID for tab
     const streamId = await chrome.tabCapture.getMediaStreamId({
       targetTabId: selectedTabId
     });
     
-    // Send to offscreen document
-    await chrome.runtime.sendMessage({
+    // Request tab capture permission
+    const permission = await chrome.permissions.request({
+      permissions: ['tabCapture']
+    });
+    
+    if (!permission) {
+      document.getElementById('status').textContent = 'Permission denied';
+      return;
+    }
+    
+    // Send to background service worker
+    chrome.runtime.sendMessage({
       type: 'startCapture',
       streamId: streamId,
       tabId: selectedTabId.toString()
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        document.getElementById('status').textContent = 'Error: ' + chrome.runtime.lastError.message;
+        return;
+      }
+      
+      if (response && response.success) {
+        isRecording = true;
+        document.getElementById('status').textContent = 'Recording...';
+        updateButtons();
+      } else {
+        document.getElementById('status').textContent = 'Error: ' + (response?.error || 'Unknown');
+      }
     });
-    
-    isRecording = true;
-    document.getElementById('status').textContent = 'Recording...';
-    updateButtons();
   } catch (error) {
     document.getElementById('status').textContent = 'Error: ' + error.message;
   }
 };
 
 document.getElementById('stopBtn').onclick = async () => {
+  document.getElementById('status').textContent = 'Stopping...';
+  
   try {
-    await chrome.runtime.sendMessage({ type: 'stopCapture' });
-    isRecording = false;
-    document.getElementById('status').textContent = 'Stopped';
-    updateButtons();
+    chrome.runtime.sendMessage({ type: 'stopCapture' }, (response) => {
+      if (chrome.runtime.lastError) {
+        document.getElementById('status').textContent = 'Error: ' + chrome.runtime.lastError.message;
+        return;
+      }
+      
+      isRecording = false;
+      document.getElementById('status').textContent = response?.success ? 'Stopped' : 'Error: ' + (response?.error || 'Unknown');
+      updateButtons();
+    });
   } catch (error) {
     document.getElementById('status').textContent = 'Error: ' + error.message;
   }
