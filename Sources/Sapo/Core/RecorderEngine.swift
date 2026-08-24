@@ -65,7 +65,7 @@ final class RecorderEngine: ObservableObject {
     @Published private(set) var levels: [String: Float] = [:]
     @Published private(set) var activeSessionFolder: URL?
 
-    private var chains: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?, fileName: String)] = []
+    private var chains: [(source: SourceDescriptor, unit: CaptureUnit, tap: ProcessTapSession?, fileName: String)] = []
     private var manifest: SessionManifest?
     private var store: SessionStore?
     private var workspaceObserver: NSObjectProtocol?
@@ -132,33 +132,45 @@ final class RecorderEngine: ObservableObject {
         var manifest = Self.initialManifest(title: folder.lastPathComponent, sources: sources,
                                             format: format, folder: folder)
 
-        var built: [(source: SourceDescriptor, chain: CaptureChain, tap: ProcessTapSession?, fileName: String)] = []
+        var built: [(source: SourceDescriptor, unit: CaptureUnit, tap: ProcessTapSession?, fileName: String)] = []
         do {
             for (index, source) in sources.enumerated() {
                 let fileName = manifest.stems[index].fileName
                 let stemURL = folder.appendingPathComponent(fileName)
 
-                // Shared resolution: app not making audio / device absent →
-                // skipped stem (pruned from the manifest below).
-                guard let resolved = SourceResolver.resolve(source: source, registry: registry) else { continue }
-                let deviceID = resolved.deviceID
-                let tap = resolved.tap
+                let unit: CaptureUnit
+                let tap: ProcessTapSession?
 
-                let chain = try CaptureChain.make(deviceID: deviceID,
-                                                  scope: kAudioObjectPropertyScopeInput,
-                                                  stemURL: stemURL, format: format)
+                switch source.kind {
+                case .application, .microphone:
+                    // Core Audio path: resolve → CaptureChain
+                    guard let resolved = SourceResolver.resolve(source: source, registry: registry) else { continue }
+                    let deviceID = resolved.deviceID
+                    tap = resolved.tap
+                    let chain = try CaptureChain.make(deviceID: deviceID,
+                                                      scope: kAudioObjectPropertyScopeInput,
+                                                      stemURL: stemURL, format: format)
+                    unit = chain
+
+                case .tabCapture:
+                    // Tab capture path: TabCaptureSession
+                    guard let tabID = source.id.components(separatedBy: "-").last else { continue }
+                    let tabSession = try TabCaptureSession.make(stemURL: stemURL,
+                                                                format: format,
+                                                                tabID: tabID)
+                    unit = tabSession
+                    tap = nil
+                }
+
                 let sourceID = source.id
-                chain.onLevel = { [weak self] level in self?.levels[sourceID] = level }
-                chain.onEnded = { [weak self] reason in
-                    // CaptureChain fires onEnded on the main queue (documented
-                    // contract in its teardown path), so the main-actor hop is
-                    // a pure assertion, not a re-dispatch.
+                unit.onLevel = { [weak self] level in self?.levels[sourceID] = level }
+                unit.onEnded = { [weak self] reason in
                     MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
                 }
-                built.append((source, chain, tap, fileName))
+                built.append((source, unit, tap, fileName))
             }
         } catch {
-            for item in built { item.chain.stop(reason: "startupFailed") }
+            for item in built { item.unit.stop(reason: "startupFailed") }
             for var tap in built.compactMap(\.tap) { tap.dispose() }
             throw error
         }
@@ -177,8 +189,8 @@ final class RecorderEngine: ObservableObject {
         // first manifest save (the crash-safe start manifest).
         for i in manifest.stems.indices {
             guard let item = built.first(where: { $0.source.id == manifest.stems[i].source.id }) else { continue }
-            manifest.stems[i].sampleRate = item.chain.clientFormat.mSampleRate
-            manifest.stems[i].channelCount = Int(item.chain.clientFormat.mChannelsPerFrame)
+            manifest.stems[i].sampleRate = item.unit.clientFormat.mSampleRate
+            manifest.stems[i].channelCount = Int(item.unit.clientFormat.mChannelsPerFrame)
         }
         try store.save(manifest, to: folder)
 
@@ -202,10 +214,16 @@ final class RecorderEngine: ObservableObject {
         // auto-stop can never fire, and a retry would abandon running chains
         // by overwriting self.chains).
         do {
-            for item in built { try item.chain.start() }
+            for item in built {
+                try item.unit.start()
+            }
         } catch {
-            for item in built { item.chain.stop(reason: "startupFailed") }
+            for item in built { item.unit.stop(reason: "startupFailed") }
             for var tap in built.compactMap(\.tap) { tap.dispose() }
+            // Stop all started units on partial failure
+            for item in built {
+                item.unit.stop(reason: "startupFailed")
+            }
             if let observer = workspaceObserver {
                 NSWorkspace.shared.notificationCenter.removeObserver(observer)
             }
@@ -240,7 +258,7 @@ final class RecorderEngine: ObservableObject {
                 // match every source whose bundleIdentifier is also nil.
                 guard let sourceBundle = item.source.bundleIdentifier,
                       sourceBundle == app.bundleIdentifier else { continue }
-                item.chain.stop(reason: "processExited")
+                item.unit.stop(reason: "processExited")
             }
         }
     }
@@ -273,18 +291,17 @@ final class RecorderEngine: ObservableObject {
         }
         self.manifest = manifest
 
-        // Tap disposal lives here (Task 3): a mid-session removal must free the
-        // tap while the session keeps recording, so the chain is disposed and
-        // un-tracked as soon as its onEnded lands. This removal site is the
-        // reentrancy-critical point in the teardown drain — reasoning:
+        // Tap/unit disposal: a mid-session removal must free the tap while the
+        // session keeps recording. The unit is disposed and un-tracked as soon
+        // as its onEnded lands. This removal site is the reentrancy-critical
+        // point in the teardown drain — reasoning:
         //
-        // (a) A chain is only removed AFTER its own teardown completed: onEnded
-        //     fires exactly-once from the serial teardown queue, after
-        //     stopHardware() unregistered the IOProc and the queue block held
-        //     the chain strongly. So if the auto-stop below (or a concurrent
-        //     stopSession) later iterates `chains` and "misses" a chain that
-        //     this block removed, that chain has already stopped itself — the
-        //     miss cannot skip a chain that is still running.
+        // (a) A unit is only removed AFTER its own teardown completed: onEnded
+        //     fires exactly-once (CaptureChain from serial teardown queue,
+        //     TabCaptureSession from main-queue async). So if the auto-stop
+        //     below (or a concurrent stopSession) later iterates `chains` and
+        //     "misses" a unit that this block removed, that unit has already
+        //     stopped itself — the miss cannot skip a unit that is still running.
         //
         // (b) No tap is double-disposed here: onEnded is exactly-once, so this
         //     block runs once per chain, and after removal the chain is gone
@@ -314,83 +331,68 @@ final class RecorderEngine: ObservableObject {
         guard case .recording = state, let store, let manifest, let folder = activeSessionFolder else {
             throw EngineMutationError.notRecording
         }
-        guard var resolved = SourceResolver.resolve(source: source, registry: registry) else {
-            throw EngineMutationError.unresolvableSource(source.name)
-        }
         let sourceID = source.id
         let fileName = Self.stemFileName(for: source, index: manifest.stems.count, format: manifest.stemFormat)
-        let chain: CaptureChain
-        do {
-            chain = try CaptureChain.make(deviceID: resolved.deviceID, scope: kAudioObjectPropertyScopeInput,
-                                          stemURL: folder.appendingPathComponent(fileName), format: manifest.stemFormat)
-        } catch {
-            // make() failed after resolve() created the tap: don't leak it.
-            resolved.tap?.dispose()
-            // StemWriter.init created the stem file eagerly
-            // (ExtAudioFileCreateWithURL), and the setClient-format failure
-            // path only closes it — the file stays on disk. No chain exists to
-            // fire onEnded, so stemEnded can never reclaim it: delete the
-            // orphan here, directly.
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
-            throw error
+        var unit: CaptureUnit
+        var tap: ProcessTapSession?
+
+        switch source.kind {
+        case .application, .microphone:
+            guard var resolved = SourceResolver.resolve(source: source, registry: registry) else {
+                throw EngineMutationError.unresolvableSource(source.name)
+            }
+            let chain: CaptureChain
+            do {
+                chain = try CaptureChain.make(deviceID: resolved.deviceID, scope: kAudioObjectPropertyScopeInput,
+                                              stemURL: folder.appendingPathComponent(fileName), format: manifest.stemFormat)
+            } catch {
+                resolved.tap?.dispose()
+                try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
+                throw error
+            }
+            chain.onLevel = { [weak self] level in self?.levels[sourceID] = level }
+            chain.onEnded = { [weak self] reason in
+                MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
+            }
+            do {
+                try chain.start()
+            } catch {
+                chain.stop(reason: "startupFailed")
+                resolved.tap?.dispose()
+                try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
+                throw error
+            }
+            unit = chain
+            tap = resolved.tap
+
+        case .tabCapture:
+            guard let tabID = source.id.components(separatedBy: "-").last else {
+                throw EngineMutationError.unresolvableSource(source.name)
+            }
+            let tabSession = try TabCaptureSession.make(stemURL: folder.appendingPathComponent(fileName),
+                                                        format: manifest.stemFormat,
+                                                        tabID: tabID)
+            tabSession.onLevel = { [weak self] level in self?.levels[sourceID] = level }
+            tabSession.onEnded = { [weak self] reason in
+                MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
+            }
+            try tabSession.start()
+            unit = tabSession
+            tap = nil
         }
-        chain.onLevel = { [weak self] level in self?.levels[sourceID] = level }
-        chain.onEnded = { [weak self] reason in
-            MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
-        }
-        do {
-            try chain.start()
-        } catch {
-            // Mirror startSession's failure cleanup for this one chain. The
-            // chain was never tracked, so nothing to remove from `chains`; the
-            // async onEnded("startupFailed") that lands later finds no stem in
-            // the manifest and no chain in `chains` (firstIndex guards) and is
-            // a no-op. start() already closed the writer before throwing, so
-            // the stem file it created is orphaned — and no chains entry exists
-            // for stemEnded's orphan cleanup to find — delete the file here.
-            chain.stop(reason: "startupFailed")
-            resolved.tap?.dispose()
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
-            throw error
-        }
+
         var updated = manifest
         updated.stems.append(StemRecord(source: source, fileName: fileName,
-                                        sampleRate: chain.clientFormat.mSampleRate,
-                                        channelCount: Int(chain.clientFormat.mChannelsPerFrame),
+                                        sampleRate: unit.clientFormat.mSampleRate,
+                                        channelCount: Int(unit.clientFormat.mChannelsPerFrame),
                                         startTime: Date(), endTime: nil, endEvent: nil))
-        // Track the chain BEFORE persisting: if the save below throws, the
-        // chain must already be reachable so the drain can reclaim it (the
-        // async onEnded lands in stemEnded's failed-add branch, which deletes
-        // the orphaned file, disposes the tap and un-tracks the chain). If it
-        // were untracked, nothing would retain it while its IOProc is
-        // registered — the IOProc holds the chain unretained, so it would
-        // dangle on deallocation.
-        //
-        // Residual, accepted: if onEnded never fires for a failed-add chain,
-        // its stem file could sit orphaned — unreachable in practice, because
-        // every addSource failure path below either deletes the file directly
-        // or drives stop() (which always enqueues onEnded), and stopSession's
-        // dispose loop reclaims any leftover chains entry on session end.
-        chains.append((source, chain, resolved.tap, fileName))
+        chains.append((source, unit, tap, fileName))
         do {
             try store.save(updated, to: folder)
             self.manifest = updated
         } catch {
-            // Save failed after start succeeded: stop the chain, dispose the
-            // tap, and delete the orphaned stem file DIRECTLY (deterministic —
-            // don't rely on the async onEnded landing). The chains entry is
-            // removed synchronously too (ruling, Task 4 pre-step): if it were
-            // left tracked, a stale onEnded("startupFailed") landing later
-            // would find a RE-ADDED chain with the same source id in
-            // stemEnded's failed-add branch and delete THAT chain's stem file
-            // (and dispose its tap) — removing the entry here closes that
-            // window. The chain stays alive after removal: stop() enqueues a
-            // teardown block that captures it strongly until the IOProc is
-            // unregistered. No manifest debris: the on-disk manifest never
-            // gained the stem (the save failed before the in-memory manifest
-            // was updated).
-            chain.stop(reason: "startupFailed")
-            resolved.tap?.dispose()
+            unit.stop(reason: "startupFailed")
+            tap?.dispose()
             chains.removeAll { $0.source.id == sourceID }
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(fileName))
             throw error
@@ -404,7 +406,7 @@ final class RecorderEngine: ObservableObject {
     /// the chain.
     func removeSource(id: String) {
         guard let item = chains.first(where: { $0.source.id == id }) else { return }
-        item.chain.stop(reason: "userRemoved")
+        item.unit.stop(reason: "userRemoved")
     }
 
     /// Sources currently producing stems in the active session.
@@ -412,9 +414,9 @@ final class RecorderEngine: ObservableObject {
 
     func stopSession() {
         guard case .recording = state else { return }
-        for item in chains { item.chain.stop(reason: "sessionEnd") }
+        for item in chains { item.unit.stop(reason: "sessionEnd") }
         // Deliberately KEPT (deviation from the brief, per controller ruling 1):
-        // the brief drops this loop on the assumption that each chain's
+        // the brief drops this loop on the assumption that each unit's
         // onEnded("sessionEnd") callback removes it in stemEnded — but on this
         // all-main path stopSession nil's out store/manifest/chains
         // synchronously, so by the time the async onEnded blocks land,

@@ -2,10 +2,12 @@ import Foundation
 import AudioToolbox
 
 /// Protocol for both CaptureChain and TabCaptureSession.
-/// Provides onLevel/onEnded callbacks and a stop(reason:) method.
+/// Provides onLevel/onEnded callbacks, client format, and lifecycle methods.
 protocol CaptureUnit: AnyObject {
     var onLevel: ((Float) -> Void)? { get set }
     var onEnded: ((String) -> Void)? { get set }
+    var clientFormat: AudioStreamBasicDescription { get }
+    func start() throws
     func stop(reason: String)
 }
 
@@ -68,9 +70,10 @@ final class TabCaptureSession: CaptureUnit {
     /// Exposed for RecorderEngine to access the client format.
     var clientFormat: AudioStreamBasicDescription { streamFormat }
     
-    func start(onLevel: @escaping (Float) -> Void, onEnded: @escaping (String) -> Void) throws {
-        self.onLevelCallback = onLevel
-        self.onEndedCallback = onEnded
+    func start() throws {
+        guard let onLevelCallback, let onEndedCallback else {
+            throw NSError(domain: "TabCaptureSession", code: 1, userInfo: [NSLocalizedDescriptionKey: "callbacks not set"])
+        }
         
         try tcpServer.start { [weak self] headerData, pcmData in
             guard let self else { return }

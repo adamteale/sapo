@@ -21,13 +21,13 @@ import CoreAudio
 ///   it "stops IO for the given AudioDeviceIOProcID" — no synchrony guarantee
 ///   — so a write may still be in flight while the file is disposed. v1
 ///   accepts this window and does not attempt to close it.
-final class CaptureChain {
+final class CaptureChain: CaptureUnit {
     let deviceID: AudioObjectID
     let scope: AudioObjectPropertyScope      // .input for taps and mics
     /// The client (HAL input stream) format this chain was built with — exposed
     /// so RecorderEngine can write real sample-rate/channel metadata into the
     /// session manifest after creation (Task 7 ruling 1).
-    let clientFormat: AudioStreamBasicDescription
+    private let _clientFormat: AudioStreamBasicDescription
     private let writer: StemWriter
     private let bytesPerFrame: Int          // hoisted from the HAL read in make()
     private var ioProcID: AudioDeviceIOProcID?
@@ -36,6 +36,7 @@ final class CaptureChain {
 
     var onLevel: ((Float) -> Void)?          // RMS 0...1, throttled to ~10 Hz
     var onEnded: ((String) -> Void)?         // called once when capture ends
+    var clientFormat: AudioStreamBasicDescription { _clientFormat }
 
     private var ended = false                // only touched on teardownQueue
 
@@ -46,7 +47,7 @@ final class CaptureChain {
         self.scope = scope
         self.writer = writer
         self.bytesPerFrame = bytesPerFrame
-        self.clientFormat = clientFormat
+        self._clientFormat = clientFormat
     }
 
     static func inputStreamFormat(deviceID: AudioObjectID, scope: AudioObjectPropertyScope) -> AudioStreamBasicDescription? {
