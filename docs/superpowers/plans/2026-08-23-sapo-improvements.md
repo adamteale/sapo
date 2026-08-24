@@ -208,7 +208,9 @@ try item.chain.start()  // then chains start
 1. ✅ **Phase 1 bugs** — done (`adf43e4`)
 2. ✅ **Phase 2 quick fixes** — done (`d21dd8b` + `6e21c78`)
 3. ✅ **Phase 3 medium features** — done (`b133f97`)
-4. **Phase 4 tab capture** — validate PoC first, then commit (next)
+4. 🔄 **Phase 4 tab capture** — in progress
+   - Spec: `docs/superpowers/specs/2026-08-23-tab-capture-poc-design.md`
+   - Architecture: Chrome extension (offscreen + AudioWorklet) → Native Messaging (Swift host) → TCP → Sapo `TabCaptureSession`
 
 ## Testing Strategy
 

@@ -4,6 +4,34 @@
 
 Validate that Chrome tab audio can be captured and recorded as a stem in Sapo — proving the architecture before committing to a full extension + Firefox build.
 
+## Chrome Extension Architecture
+
+Chrome 116+ requires an **offscreen document** for tab audio capture. Service workers cannot use `AudioContext` or `getUserMedia` directly. The architecture:
+
+```
+Extension popup (MV3) → chrome.tabCapture.getMediaStreamId()
+                       → offscreen document → AudioContext → AudioWorklet
+                       → main thread → chrome.runtime.connectNative()
+                       → native messaging host (Swift)
+                       → TCP → Sapo
+```
+
+**Offscreen document** — required because:
+- Service workers have no DOM / no `AudioContext`
+- `chrome.tabCapture.getMediaStreamId()` returns an ID (not a stream), usable only in an offscreen document via `getUserMedia()`
+- AudioWorklet runs on a dedicated audio rendering thread (vs. deprecated `ScriptProcessorNode` on main thread)
+
+**AudioWorklet** — chosen over deprecated `ScriptProcessorNode`:
+- Runs on dedicated audio thread, no main-thread throttling
+- VS Code's `pcmCaptureWorklet` pattern: batch mono frames to 4096 samples, transfer via `port.postMessage()` with transferable `ArrayBuffer`
+- Worklet module loaded from blob URL (CSP-safe)
+
+**Native messaging host** — separate Swift executable:
+- Chrome spawns it via `connectNative()`, keeps it running until the port is destroyed
+- Reads length-prefixed JSON from stdin, writes responses to stdout
+- Relays audio to Sapo via TCP `localhost:5678`
+- Built as a separate SwiftPM target (`SapoTabHost`)
+
 ## Architecture
 
 ```
@@ -21,9 +49,10 @@ The Sapo side integrates with the existing `RecorderEngine` as a new `SourceKind
 ## Audio Format
 
 - **32-bit float PCM, 48kHz, mono**
-- Matches Sapo's internal format; Chrome delivers Float32 natively
+- Matches Sapo's internal format; Chrome delivers Float32 natively from `getUserMedia()`
 - Mono is correct — tab audio is already a mixed stereo bus
-- Chrome almost always delivers 48kHz natively; if not, Sapo's Mixer resamples
+- AudioWorklet batches 4096 mono samples per chunk
+- Chrome almost always delivers 48kHz natively; Sapo's Mixer resamples if different
 
 ## Data Flow
 
@@ -67,8 +96,8 @@ No changes to the recording pipeline core. `RecorderEngine.startSession()` alrea
 ```swift
 case .tabCapture:
     let session = try TabCaptureSession.make(stemURL: stemURL, format: format)
-    chain = session.chain          // CaptureChain wrapping the stem writer
-    tap = nil                      // no Core Audio tap
+    chain = session.captureChain   // CaptureChain wrapping the stem writer
+    tap = nil                      // no Core Audio tap (tab has no Core Audio process)
 ```
 
 `TabCaptureSession` holds a `CaptureChain` internally and connects the TCP stream to it.
@@ -77,13 +106,13 @@ case .tabCapture:
 
 ```
 chrome-extension/
-  manifest.json        # manifest v3, permissions: tabCapture, tabs, nativeMessaging
-  background.js        # service worker: tabCapture + AudioContext + Native Messaging
+  manifest.json        # manifest v3, permissions: tabCapture, tabs, offscreen, storage
+  background.js        # service worker: orchestrates popup ↔ offscreen ↔ native host
   popup.html           # UI: tab list, select, start/stop
   popup.js             # popup UI logic
-
-Sources/SapoNativeHost/
-  main.swift           # Native Messaging stdin → TCP relay
+  offscreen.html       # required host for getUserMedia in MV3
+  offscreen.js         # tab audio capture: getUserMedia → AudioContext → AudioWorklet → port
+  pcm-capture.worklet.js  # AudioWorklet processor: batches 4096 mono Float32 frames
 
 Sources/Sapo/
   Core/TabCaptureSession.swift   # TCP server + stem writer
@@ -92,10 +121,14 @@ Sources/Sapo/
   UI/SettingsView.swift          # port config + enable toggle
 ```
 
+**No separate `SapoNativeHost` directory** — the native messaging host is a SwiftPM executable target within the Sapo project, built alongside the app. This keeps the host and Sapo in sync (same version, same repo).
+
 ## Protocol Details
 
 ### Native Messaging (Chrome → Swift Host)
-- Standard Chrome Native Messaging protocol: 4-byte big-endian JSON message length, then JSON
+- Standard Chrome Native Messaging protocol: **4-byte native-endian** (little-endian on macOS) JSON message length, then UTF-8 JSON body
+- Chrome keeps the host process alive while `connectNative()` port is open
+- The first argument to the host process is the calling extension's origin
 - Message format:
   ```json
   {"type":"audio","tabId":"123","data":"base64..."}
@@ -104,6 +137,7 @@ Sources/Sapo/
   ```
 - `audio`: 4096 Float32 samples (16384 bytes raw → ~22KB base64)
 - `silence`: sent when no audio is detected (saves CPU)
+- Max message size: 1 MB from native host, 4 GB from Chrome
 
 ### TCP (Swift Host → Sapo)
 - Connection string: `localhost:5678` (configurable)
@@ -112,6 +146,11 @@ Sources/Sapo/
   {"tabId":"123","sampleRate":48000,"frameCount":4096}
   ```
   followed by `frameCount × 4` bytes of Float32 PCM (little-endian)
+
+### Native Messaging Host Registration (macOS)
+- Host manifest placed at: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json`
+- Host name: `com.sapomac.sapo-tab-capture` (lowercase alphanumeric, underscores, dots)
+- Manifest includes the extension ID in `allowed_origins` (known at build time from the extension manifest)
 
 ## Error Handling
 
@@ -125,32 +164,36 @@ Sources/Sapo/
 ### RecorderView
 - New row type for tab sources: speaker icon + tab title + badge "Tab"
 - Same mute/selection controls as app sources
+- Tab sources show a small indicator that audio comes from Chrome
 
 ### SettingsView
 - "Tab Capture" section:
   - Toggle: Enable tab capture
   - TCP port: default 5678 (configurable)
-  - Status indicator: "Connected" / "Disconnected"
+  - Status indicator: "Native host registered" / "Not registered"
+  - Note: "Install the Chrome extension from chrome://extensions → Developer mode → Load unpacked"
 
-### Popup UI
-- Lists available tabs with titles
+### Popup UI (Chrome extension)
+- Lists available tabs with titles (via `chrome.tabs.query`)
 - "Start capture" / "Stop capture" buttons
-- Shows which tabs are currently captured
+- Shows which tabs are currently captured (via `chrome.tabCapture.getCapturedTabs()`)
+- Status: "Connecting..." / "Recording" / "Disconnected"
 
 ## Testing
 
 ### Manual Validation (PoC goal)
-1. Install Chrome extension from `chrome-extension/`
-2. Launch Sapo via `run-sapo.command`, open Settings, enable tab capture
-3. Play audio in a Chrome tab (e.g., YouTube, Spotify web)
-4. Select the tab source in Sapo and start recording
-5. Verify stem file exists and plays back correctly
-6. Stop recording, export, verify tab audio is in the exported file
+1. Install Chrome extension from `chrome-extension/` (Developer mode → Load unpacked)
+2. Register native messaging host: `SapoTabHost` writes its manifest to Chrome's `NativeMessagingHosts` directory
+3. Launch Sapo via `run-sapo.command`, open Settings, enable tab capture
+4. Play audio in a Chrome tab (e.g., YouTube, Spotify web)
+5. Click extension icon → select tab → "Start capture"
+6. Select the tab source in Sapo and start recording
+7. Verify stem file exists and plays back correctly
+8. Stop recording, export, verify tab audio is in the exported file
 
 ### Automated Tests
 - `TabCaptureSessionTests` — TCP server starts, receives data, writes file
-- `NativeHostTests` — stdin JSON → TCP relay correctness
-- No unit tests for Chrome extension (browser automation out of scope)
+- No unit tests for Chrome extension (browser automation out of scope for PoC)
 
 ## Success Criteria
 
@@ -166,9 +209,10 @@ Sources/Sapo/
 - Multi-tab capture (single tab only)
 - Video-only tabs (no audio → skip)
 - Full extension store submission
-- Auto-start on Chrome launch
+- Auto-start on Chrome launch (manual load unpacked)
 - Tab selection UI inside Sapo (popup UI is external)
 - Per-source gain/volume controls
+- DRM-protected sites (fundamental Chrome limitation — Widevine encrypts audio)
 
 ## Risk Assessment
 
