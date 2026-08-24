@@ -267,7 +267,7 @@ enum SourceKind: String, Codable, CaseIterable {
 Run: `swift build`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Sources/Sapo/Core/Models.swift
@@ -637,7 +637,7 @@ final class TabCaptureSession {
 Run: `swift build`
 Expected: PASS (may need adjustments based on compilation errors)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Sources/Sapo/Core/TabCaptureSession.swift
@@ -1444,7 +1444,7 @@ struct TabCaptureSessionTests {
 Run: `swift test --filter TabCaptureSessionTests`
 Expected: PASS (at least the stem file creation test)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Tests/SapoTests/TabCaptureSessionTests.swift
@@ -1517,7 +1517,7 @@ struct TabCaptureIntegrationTests {
 Run: `swift test --filter TabCaptureIntegrationTests`
 Expected: PASS (may need adjustments based on RecorderEngine changes)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add Tests/SapoTests/TabCaptureIntegrationTests.swift
@@ -1535,7 +1535,7 @@ git commit -m "test: add TabCaptureIntegrationTests"
 - Consumes: `SapoTabHost` executable path
 - Produces: Native messaging host manifest in Chrome's `NativeMessagingHosts` directory
 
-- [ ] **Step 1: Write registration script**
+- [x] **Step 1: Write registration script**
 
 ```bash
 #!/bin/bash
@@ -1567,13 +1567,13 @@ echo "Extension ID: $EXTENSION_ID"
 echo "Please reload the extension in chrome://extensions"
 ```
 
-- [ ] **Step 2: Make script executable**
+- [x] **Step 2: Make script executable**
 
 ```bash
 chmod +x scripts/register-native-host.sh
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add scripts/register-native-host.sh
@@ -1591,7 +1591,7 @@ git commit -m "feat: add native messaging host registration script"
 - Consumes: existing README
 - Produces: Tab capture setup instructions, architecture diagram
 
-- [ ] **Step 1: Add tab capture section to README**
+- [x] **Step 1: Add tab capture section to README**
 
 ```markdown
 ## Tab Capture (PoC)
@@ -1641,7 +1641,7 @@ Chrome Extension → Native Messaging → Swift Host → TCP → Sapo
 - PoC only — no Firefox, no multi-tab, no auto-start
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add README.md
