@@ -15,7 +15,7 @@ protocol CaptureUnit: AnyObject {
 /// No CaptureChain — tab capture has no Core Audio device.
 /// Instead, we write directly to StemWriter and track levels separately.
 final class TabCaptureSession: CaptureUnit {
-    private let stemWriter: StemWriter
+    let stemWriter: StemWriter
     private let tcpServer: TCPServer
     private let tabID: String
     private var onLevelCallback: ((Float) -> Void)?
@@ -50,11 +50,11 @@ final class TabCaptureSession: CaptureUnit {
         return TabCaptureSession(stemWriter: writer, tabID: tabID, streamFormat: clientFormat)
     }
     
-    private init(stemWriter: StemWriter, tabID: String, streamFormat: AudioStreamBasicDescription) {
+    init(stemWriter: StemWriter, tabID: String, streamFormat: AudioStreamBasicDescription, port: Int = 5678) {
         self.stemWriter = stemWriter
         self.tabID = tabID
         self.streamFormat = streamFormat
-        self.tcpServer = TCPServer(port: 5678)
+        self.tcpServer = TCPServer(port: port)
     }
     
     var onLevel: ((Float) -> Void)? {
@@ -71,7 +71,8 @@ final class TabCaptureSession: CaptureUnit {
     var clientFormat: AudioStreamBasicDescription { streamFormat }
     
     func start() throws {
-        guard let onLevelCallback, let onEndedCallback else {
+        // Verify callbacks are set before starting TCP server
+        guard onLevel != nil, onEnded != nil else {
             throw NSError(domain: "TabCaptureSession", code: 1, userInfo: [NSLocalizedDescriptionKey: "callbacks not set"])
         }
         
@@ -132,17 +133,20 @@ final class TabCaptureSession: CaptureUnit {
         }
     }
     
-    private func pcmDataToBufferList(_ data: Data) -> UnsafePointer<AudioBufferList> {
+    func pcmDataToBufferList(_ data: Data) -> UnsafePointer<AudioBufferList> {
         // Create a simple AudioBufferList from the PCM data
-        var bufferList = AudioBufferList(mNumberBuffers: 1,
-                                         mBuffers: AudioBuffer(mNumberChannels: 1,
-                                                               mDataByteSize: UInt32(data.count),
-                                                               mData: UnsafeMutablePointer(mutating: data.withUnsafeBytes { ptr in
-                                                                   return ptr.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                                                               })))
-        // SAFETY: ExtAudioFileWrite reads synchronously from the buffer list,
-        // so the pointer is valid for the duration of the write call.
-        return UnsafePointer<AudioBufferList>(&bufferList)
+        // SAFETY: ExtAudioFileWrite reads synchronously, so the pointer is valid
+        // for the duration of the write call. We use withUnsafePointer to satisfy
+        // Swift's temporary pointer rules.
+        var result: UnsafePointer<AudioBufferList>!
+        data.withUnsafeBytes { raw in
+            var abl = AudioBufferList(mNumberBuffers: 1,
+                                      mBuffers: AudioBuffer(mNumberChannels: 1,
+                                                            mDataByteSize: UInt32(data.count),
+                                                            mData: UnsafeMutableRawPointer(mutating: raw.baseAddress)))
+            result = withUnsafePointer(to: &abl) { $0 }
+        }
+        return result
     }
 }
 
