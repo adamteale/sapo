@@ -65,15 +65,71 @@ Export happens post-session: Sapo reads the manifest and the individual stem fil
 ## Limitations
 
 - **Safari audio** is shared via WebKit's GPU process — Sapo labels it clearly in the UI so you know what you're capturing
-- **Per-tab capture** would require browser extensions — a future feature
 - **No transcription** — Sapo produces audio files; transcription is left to dedicated tools (export stems and feed them to Whisper, otter.ai, etc.)
+
+## Tab Capture (PoC)
+
+Sapo can capture audio from Chrome tabs via a Chrome extension and native messaging host.
+
+### Setup
+
+1. Build the native messaging host:
+   ```bash
+   swift build -c release --product SapoTabHost
+   ```
+
+2. Register the native host:
+   ```bash
+   ./scripts/register-native-host.sh
+   ```
+
+3. Load the Chrome extension:
+   - Open `chrome://extensions`
+   - Enable **Developer mode** (top right toggle)
+   - Click **Load unpacked** and select the `chrome-extension/` directory
+   - Note the **Extension ID** shown on the extension card
+
+4. Update the extension ID in the manifest:
+   ```bash
+   # Edit ~/.config/google-chrome/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json
+   # Replace the EXTENSION_ID placeholder with your actual extension ID
+   ```
+
+5. Reload the extension by clicking the reload icon on the extension card
+
+### Usage
+
+1. Open Sapo
+2. Go to the Recorder tab
+3. Select a Chrome tab source from the list
+4. Open the Chrome extension popup — it will show available tabs
+5. Click **Start Capture** on the tab you want to record
+6. Start recording in Sapo — the tab audio will be captured as a stem
+
+### Architecture
+
+```
+Chrome Extension → Native Messaging → Swift Host → TCP → Sapo
+```
+
+- **Chrome extension**: Captures tab audio via `chrome.tabCapture`, processes via `AudioContext` → `AudioWorklet`, sends via native messaging
+- **Swift native host** (`SapoTabHost`): Reads JSON from stdin, forwards PCM over TCP to Sapo
+- **Sapo**: Receives TCP data, writes stem files via `StemWriter`
+
+### Limitations
+
+- Single tab at a time
+- DRM-protected sites (Widevine) produce silent audio
+- Chrome extension must be loaded in Developer mode (not from Chrome Web Store)
+- PoC only — no Firefox support, no multi-tab capture, no auto-start
 
 ## Roadmap
 
 - [ ] Per-app volume sliders during recording
 - [ ] Transcription export (Whisper, AssemblyAI)
-- [ ] Tab-level capture via browser extensions
 - [ ] Notarized distribution (Developer ID)
+- [ ] Firefox tab capture support
+- [ ] Multi-tab capture
 
 ## License
 
