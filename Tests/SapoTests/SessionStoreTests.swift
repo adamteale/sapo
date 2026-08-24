@@ -73,4 +73,36 @@ import Testing
         try "junk".write(to: folder.appendingPathComponent("readme.txt"), atomically: true, encoding: .utf8)
         #expect(store.listSessions().isEmpty)
     }
+
+    @Test func deleteOldSessionsRemovesOnlyOldOnes() throws {
+        let (store, _) = try makeStore()
+        let now = Date()
+
+        // Create a recent session (1 day old)
+        let recentDate = now.addingTimeInterval(-86_400)
+        let recentFolder = try store.makeSessionFolder(start: recentDate)
+        let recentManifest = SessionManifest(identifier: UUID(), title: "Recent",
+                                             startTime: recentDate, endTime: nil,
+                                             stemFormat: .wav, stems: [], appVersion: "0")
+        try store.save(recentManifest, to: recentFolder)
+
+        // Create an old session (60 days old)
+        let oldDate = now.addingTimeInterval(-86_400 * 60)
+        let oldFolder = try store.makeSessionFolder(start: oldDate)
+        // Write a small file to give it size
+        try "old-data".write(to: oldFolder.appendingPathComponent("stem-1.caf"), atomically: true, encoding: .utf8)
+        let oldManifest = SessionManifest(identifier: UUID(), title: "Old",
+                                          startTime: oldDate, endTime: nil,
+                                          stemFormat: .wav, stems: [], appVersion: "0")
+        try store.save(oldManifest, to: oldFolder)
+
+        // Cleanup with 30-day threshold should only remove the old session.
+        let result = try store.deleteOldSessions(maxAgeDays: 30)
+        #expect(result.count == 1)
+        #expect(result.bytesFreed > 0)
+        // Recent session should still exist.
+        let sessions = store.listSessions()
+        #expect(sessions.count == 1)
+        #expect(sessions[0].manifest.title == "Recent")
+    }
 }

@@ -121,4 +121,41 @@ import Testing
             #expect("\(error)".contains(missingName))
         }
     }
+
+    @Test func portionExportTrimsToRequestedRange() throws {
+        let (folder, manifest, cleanup) = try Self.makeSession()
+        defer { cleanup() }
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("stems-out-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+        // Export only the second half (1-2 seconds) of a 2-second stem.
+        let request = ExportRequest(sessionFolder: folder,
+                                    selectedStemIDs: Set(manifest.stems.map(\.id)),
+                                    scope: .individual, format: .wav, destination: dest,
+                                    trimStart: 1.0, trimEnd: 2.0)
+        let files = try ExportEngine.export(request)
+        #expect(files.count == 2)
+        // Each file should be ~1 second, not ~2 seconds.
+        for file in files {
+            let audio = try AVAudioFile(forReading: file)
+            let seconds = Double(audio.length) / audio.fileFormat.sampleRate
+            #expect(seconds > 0.8 && seconds < 1.2) // ~1s ±10%
+        }
+    }
+
+    @Test func portionExportWithNoTrimExportsFullSession() throws {
+        let (folder, manifest, cleanup) = try Self.makeSession()
+        defer { cleanup() }
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("stems-out-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let request = ExportRequest(sessionFolder: folder,
+                                    selectedStemIDs: Set(manifest.stems.map(\.id)),
+                                    scope: .combined, format: .wav, destination: dest)
+        let files = try ExportEngine.export(request)
+        #expect(files.count == 1)
+        let audio = try AVAudioFile(forReading: files[0])
+        let seconds = Double(audio.length) / audio.fileFormat.sampleRate
+        #expect(seconds > 1.8 && seconds < 2.2) // ~2s ±10%
+    }
 }

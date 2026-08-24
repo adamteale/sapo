@@ -21,6 +21,9 @@ final class SettingsStore: ObservableObject {
     @Published var stemCleanup: StemCleanupBehavior {
         didSet { defaults.set(stemCleanup.rawValue, forKey: "stemCleanup") }
     }
+    @Published var maxSessionAge: Int? {
+        didSet { defaults.set(maxSessionAge, forKey: "maxSessionAge") }
+    }
     @Published var launchAtLogin: Bool {
         didSet {
             defaults.set(launchAtLogin, forKey: "launchAtLogin")
@@ -37,6 +40,8 @@ final class SettingsStore: ObservableObject {
         self.defaults = defaults
         stemFormat = StemFormat(rawValue: defaults.string(forKey: "stemFormat") ?? "") ?? .alac
         stemCleanup = StemCleanupBehavior(rawValue: defaults.string(forKey: "stemCleanup") ?? "") ?? .ask
+        let maxAge = defaults.integer(forKey: "maxSessionAge")
+        maxSessionAge = maxAge > 0 ? maxAge : nil
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         let mic = defaults.string(forKey: "defaultMicDeviceUID")
         defaultMicDeviceUID = (mic?.isEmpty == false) ? mic : nil

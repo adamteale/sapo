@@ -83,6 +83,8 @@ struct SapoApp: App {
         WindowGroup("Sapo") {
             MainTabs(model: AppModel.shared)
                 .frame(minWidth: 560, minHeight: 500)
+                .onAppear { registerShortcuts() }
+                .onDisappear { unregisterShortcuts() }
         }
         .windowResizability(.contentSize)
 
@@ -90,6 +92,54 @@ struct SapoApp: App {
             SettingsView(settings: AppModel.shared.settings, model: AppModel.shared)
         }
     }
+}
+
+// MARK: - Keyboard Shortcuts
+
+@MainActor
+private var shortcutMonitors: [Any] = []
+
+@MainActor
+func registerShortcuts() {
+    // ⌘R: Toggle record/stop
+    shortcutMonitors.append(NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        guard event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.shift)
+              && event.modifierFlags.contains(.control) == false else { return event }
+        let key = event.characters?.lowercased() ?? ""
+        if key == "r" {
+            let model = AppModel.shared
+            if case .recording = model.engine.state { model.stopRecording() }
+            else { model.startRecording() }
+            return nil // consume
+        }
+        if key == "e" {
+            AppModel.shared.activeTab = 1 // switch to Sessions
+            return nil
+        }
+        if key == "m" {
+            if let mic = AppModel.shared.micSources.first {
+                AppModel.shared.toggleSource(mic.id)
+            }
+            return nil
+        }
+        if let digit = key.first, let num = digit.wholeNumberValue {
+            if num >= 1 && num <= 9 {
+                let idx = num - 1
+                let allSources = AppModel.shared.appSources + AppModel.shared.micSources
+                if idx < allSources.count {
+                    AppModel.shared.toggleSource(allSources[idx].id)
+                }
+                return nil
+            }
+        }
+        return event
+    })
+}
+
+@MainActor
+func unregisterShortcuts() {
+    for monitor in shortcutMonitors { NSEvent.removeMonitor(monitor) }
+    shortcutMonitors.removeAll()
 }
 
 struct MainTabs: View {
