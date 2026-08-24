@@ -52,4 +52,8 @@ struct SessionSummary: Identifiable {
         return manifest.stems.compactMap(\.endTime)
             .map { $0.timeIntervalSince(manifest.startTime) }.max() ?? 0
     }
+    /// Age in days since the session started.
+    var ageInDays: Double {
+        Date().timeIntervalSince(manifest.startTime) / 86_400
+    }
 }

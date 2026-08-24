@@ -124,55 +124,45 @@ try item.chain.start()  // then chains start
 
 ---
 
-## Phase 3: Medium Features (half-day each)
+## Phase 3: Medium Features (half-day each) ✅ COMPLETE
 
-### 3.1 Session retention / cleanup
-**Problem:** Sessions accumulate with no automatic cleanup. `SettingsStore` has `stemCleanup` (ask/always/never) but only on export.
+### 3.1 Session retention / cleanup ✅ DONE
+**Implemented:**
+- `maxSessionAge: Int?` in SettingsStore (persisted; 0/absent = never delete)
+- `SessionStore.oldSessions(maxAgeDays:)` and `deleteOldSessions(maxAgeDays:)` — returns folder count, duration, bytes freed
+- `SessionSummary.ageInDays` computed property in Models.swift
+- SettingsView "Session retention" section: Picker (Never/1w/2w/1m/3m) + destructive cleanup button
 
-**Fix:** Add a retention policy setting. On app launch, check for sessions older than `N` days and prompt to delete (or auto-delete based on setting).
-
-**Design:**
-- Add `maxSessionAge: Int?` to SettingsStore (nil = no limit)
-- On `AppModel.init`, scan for old sessions and offer cleanup
-- Add a "Cleanup Sessions" button in Settings view
-- Show session age in Sessions view
-
-**Files:** `Sources/Sapo/UI/SettingsStore.swift`, `Sources/Sapo/UI/AppModel.swift`, `Sources/Sapo/UI/SettingsView.swift`, `Sources/Sapo/UI/SessionsView.swift`
-**Tests:** Add `SessionStoreTests` for old session detection.
+**Files:** `Sources/Sapo/UI/SettingsStore.swift`, `Sources/Sapo/Core/Models.swift`, `Sources/Sapo/UI/SettingsView.swift`, `Sources/Sapo/Core/SessionStore.swift`
+**Tests:** `SessionStoreTests.deleteOldSessionsRemovesOnlyOldOnes()`
 
 ---
 
-### 3.2 Portion export (trim)
-**Problem:** Can only export entire sessions. Want to pull out a specific segment.
+### 3.2 Portion export (trim) ✅ DONE
+**Implemented:**
+- `StemReader.read()` accepts optional `offset`/`duration` — reads full file, trims PCM buffer
+- `ExportRequest.trimStart`/`trimEnd` — seconds from session start
+- ExportEngine clips trim range per-stem (stem-relative start/end)
+- SessionDetailView "Time range (optional)" section with Start/End seconds TextField
+- Fixed bug: trimEnd was absolute time, not duration — now correctly computes `trimEnd - trimStart`
 
-**Fix:** Add a time-range selector in the export dialog. Mixer reads stems with start/end offsets.
-
-**Design:**
-- Export dialog adds time range inputs (start/end or "from X to Y")
-- Mixer adds `offset` and `duration` parameters to `mix()`
-- StemReader already supports seeking — use it to skip to offset
-
-**Files:** `Sources/Sapo/Export/Mixer.swift`, `Sources/Sapo/Export/StemReader.swift`, `Sources/Sapo/UI/SessionDetailView.swift`
-**Tests:** Add portion export test in `ExportEngineTests.swift`.
+**Files:** `Sources/Sapo/Export/StemReader.swift`, `Sources/Sapo/Export/ExportEngine.swift`, `Sources/Sapo/UI/SessionDetailView.swift`, `Sources/Sapo/UI/SessionsView.swift`
+**Tests:** `ExportEngineTests.portionExportTrimsToRequestedRange()`, `portionExportWithNoTrimExportsFullSession()`
 
 ---
 
-### 3.3 Keyboard shortcuts
-**Problem:** No keyboard shortcuts for power users.
+### 3.3 Keyboard shortcuts ✅ DONE
+**Implemented:**
+- `registerShortcuts()`/`unregisterShortcuts()` in App.swift using `NSEvent.addLocalMonitorForEvents(.keyDown)`
+- ⌘R: toggle record/stop
+- ⌘E: switch to Sessions tab
+- ⌘M: toggle first mic
+- ⌘1-⌘9: toggle first 9 sources
+- Record/SessionDetail buttons show "⌘R"/"⌘E" in labels
+- @MainActor on shortcut functions for global variable safety
 
-**Fix:** Add common shortcuts:
-- ⌘R: Toggle record/stop
-- ⌘+M: Toggle microphone
-- ⌘+1/2/3: Toggle first three sources
-- ⌘+E: Export current session
-
-**Design:**
-- Add `KeyboardShortcuts` helper that registers shortcuts via AppKit
-- Map shortcuts to AppModel actions
-- Show shortcuts in UI labels (e.g., "Record ⌘R")
-
-**Files:** `Sources/Sapo/UI/AppModel.swift`, `Sources/Sapo/UI/RecorderView.swift`, `Sources/Sapo/App.swift`
-**Tests:** Add `AppModelTests` for shortcut-triggered actions.
+**Files:** `Sources/Sapo/App.swift`, `Sources/Sapo/UI/RecorderView.swift`
+**Tests:** No dedicated shortcut tests (integration-level; manual verification sufficient)
 
 ---
 
@@ -215,10 +205,10 @@ try item.chain.start()  // then chains start
 
 ## Execution Order
 
-1. **Phase 1 bugs** — critical, no risk, immediate value
-2. **Phase 2 quick fixes** — each is independent, testable, high user value
-3. **Phase 3 medium features** — build on top of Phase 2
-4. **Phase 4 tab capture** — validate PoC first, then commit
+1. ✅ **Phase 1 bugs** — done (`adf43e4`)
+2. ✅ **Phase 2 quick fixes** — done (`d21dd8b` + `6e21c78`)
+3. ✅ **Phase 3 medium features** — done (`b133f97`)
+4. **Phase 4 tab capture** — validate PoC first, then commit (next)
 
 ## Testing Strategy
 

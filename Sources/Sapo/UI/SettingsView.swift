@@ -5,6 +5,8 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var model: AppModel
+    @State private var showCleanupConfirmation = false
+    @State private var cleanupMessage: String?
 
     var body: some View {
         Form {
@@ -17,6 +19,19 @@ struct SettingsView: View {
                 Text("Always").tag(StemCleanupBehavior.always)
                 Text("Never").tag(StemCleanupBehavior.never)
             }
+            Section("Session retention") {
+                Picker("Delete sessions older than", selection: Binding(
+                    get: { settings.maxSessionAge ?? 30 },
+                    set: { settings.maxSessionAge = $0 > 0 ? $0 : nil })) {
+                    Text("Never").tag(0)
+                    Text("1 week").tag(7)
+                    Text("2 weeks").tag(14)
+                    Text("1 month").tag(30)
+                    Text("3 months").tag(90)
+                }
+                Button("Clean up old sessions…") { showCleanupConfirmation = true }
+                    .disabled(settings.maxSessionAge == nil || settings.maxSessionAge! == 0)
+            }
             Toggle("Launch at login", isOn: $settings.launchAtLogin)
             Picker("Default microphone", selection: Binding(
                 get: { settings.defaultMicDeviceUID ?? "" },
@@ -26,9 +41,28 @@ struct SettingsView: View {
                     Text(mic.name).tag(mic.deviceUID ?? "")
                 }
             }
+            if let cleanupMessage { Text(cleanupMessage).font(.callout) }
         }
         .formStyle(.grouped)
         .frame(width: 380)
         .onAppear { model.refreshSources() }
+        .alert("Clean up old sessions?", isPresented: $showCleanupConfirmation) {
+            Button("Delete", role: .destructive) { performCleanup() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Sessions older than \(settings.maxSessionAge ?? 30) days will be permanently deleted. This cannot be undone.")
+        }
+    }
+
+    private func performCleanup() {
+        guard let maxAge = settings.maxSessionAge, maxAge > 0 else { return }
+        do {
+            let result = try model.store.deleteOldSessions(maxAgeDays: maxAge)
+            let fmt = ByteCountFormatter()
+            fmt.countStyle = .file
+            cleanupMessage = "Deleted \(result.count) session(s), freed \(fmt.string(fromByteCount: result.bytesFreed))."
+        } catch {
+            cleanupMessage = "Cleanup failed: \(error.localizedDescription)"
+        }
     }
 }

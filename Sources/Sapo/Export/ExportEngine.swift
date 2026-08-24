@@ -11,6 +11,10 @@ struct ExportRequest {
     var destination: URL
     /// Optional progress callback (0.0–1.0). Called after each group is mixed.
     var onProgress: ((Float) -> Void)?
+    /// Optional time-range trim. `start` is seconds from the session start;
+    /// `end` is the absolute end time. Both nil means full session.
+    var trimStart: TimeInterval?
+    var trimEnd: TimeInterval?
 }
 
 enum ExportError: Error, LocalizedError {
@@ -43,8 +47,36 @@ enum ExportEngine {
         var stems: [StemAudio] = []
         var missing: [String] = []
         for stem in selected {
+            let stemStart = stem.startTime.timeIntervalSince(manifest.startTime)
+            let stemEnd = stem.endTime?.timeIntervalSince(manifest.startTime) ?? Double.greatestFiniteMagnitude
+            // Clip trim range to stem's actual time range.
+            let trimStart: TimeInterval?
+            let trimEnd: TimeInterval?
+            if let start = request.trimStart {
+                trimStart = start > stemStart ? start - stemStart : nil
+            } else {
+                trimStart = nil
+            }
+            if let end = request.trimEnd {
+                let stemDuration = stemEnd - stemStart
+                trimEnd = end > stemStart ? min(end - stemStart, stemDuration) : nil
+            } else {
+                trimEnd = nil
+            }
+            // Compute duration: nil means read to end of stem.
+            let trimDuration: TimeInterval? = if let start = trimStart, let end = trimEnd {
+                end - start
+            } else if let end = trimEnd {
+                end
+            } else if let start = trimStart {
+                // No end trim specified: read from start to end of stem.
+                nil
+            } else {
+                nil
+            }
             guard let audio = try StemReader.read(stem, sessionStart: manifest.startTime,
-                                                  folder: request.sessionFolder) else {
+                                                  folder: request.sessionFolder,
+                                                  offset: trimStart, duration: trimDuration) else {
                 missing.append(stem.fileName)
                 continue
             }

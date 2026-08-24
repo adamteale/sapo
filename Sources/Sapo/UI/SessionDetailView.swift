@@ -15,6 +15,8 @@ struct SessionDetailView: View {
     @State private var exportMessage: String?
     @State private var exportProgress: Float = 0
     @State private var isExporting = false
+    @State private var trimStart: String = ""
+    @State private var trimEnd: String = ""
 
     var body: some View {
         List {
@@ -36,7 +38,20 @@ struct SessionDetailView: View {
                     Text("M4A (AAC)").tag(ExportFormat.m4a)
                     Text("WAV").tag(ExportFormat.wav)
                 }
-                Button("Export…") { runExport() }
+                Section("Time range (optional)") {
+                    HStack {
+                        TextField("Start (seconds)", text: $trimStart)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                        Text("to")
+                        TextField("End (seconds)", text: $trimEnd)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                    }
+                    Text("Leave blank for full session. Example: 0 to 120 for first 2 minutes.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Export… ⌘E") { runExport() }
                     .disabled(selectedStemIDs.isEmpty || isExporting)
                 if isExporting {
                     ProgressView(value: exportProgress)
@@ -89,12 +104,15 @@ struct SessionDetailView: View {
         isExporting = true
         exportProgress = 0
         exportMessage = nil
+        let trimStart = (trimStart.trimmingCharacters(in: .whitespaces)).isEmpty ? nil : Double(trimStart)
+        let trimEnd = (trimEnd.trimmingCharacters(in: .whitespaces)).isEmpty ? nil : Double(trimEnd)
         do {
             let files = try sessionsModel.export(session: session, selectedStemIDs: selectedStemIDs,
                                                  scope: scope, format: format, to: url,
                                                  onProgress: { progress in
                                                     self.exportProgress = progress
-                                                 })
+                                                 },
+                                                 trimStart: trimStart, trimEnd: trimEnd)
             exportMessage = "Exported \(files.count) file(s) to \(url.lastPathComponent)"
             promptForStemCleanup(after: files)
         } catch {

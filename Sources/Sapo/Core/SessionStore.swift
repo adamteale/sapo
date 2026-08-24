@@ -80,4 +80,48 @@ final class SessionStore {
         }
         return total
     }
+
+    /// Returns sessions older than `maxAgeDays` days. Each entry is the folder URL,
+    /// total duration, and disk size (for display).
+    func oldSessions(maxAgeDays: Int) -> [(folder: URL, duration: TimeInterval, sizeBytes: Int64)] {
+        let cutoff = Date().addingTimeInterval(-Double(maxAgeDays) * 86_400)
+        let fm = FileManager.default
+        guard let children = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
+        var result: [(folder: URL, duration: TimeInterval, sizeBytes: Int64)] = []
+        for folder in children {
+            guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            guard let manifest = try? loadManifest(at: folder) else { continue }
+            if manifest.startTime < cutoff {
+                let duration: TimeInterval
+                if let end = manifest.endTime {
+                    duration = end.timeIntervalSince(manifest.startTime)
+                } else {
+                    duration = manifest.stems.compactMap(\.endTime)
+                        .map { $0.timeIntervalSince(manifest.startTime) }.max() ?? 0
+                }
+                result.append((folder, duration, diskUsage(of: folder)))
+            }
+        }
+        return result
+    }
+
+    /// Delete all sessions older than `maxAgeDays` days. Returns the count of
+    /// deleted sessions and total bytes freed.
+    func deleteOldSessions(maxAgeDays: Int) throws -> (count: Int, bytesFreed: Int64) {
+        let cutoff = Date().addingTimeInterval(-Double(maxAgeDays) * 86_400)
+        let fm = FileManager.default
+        guard let children = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return (0, 0) }
+        var deleted = 0
+        var freed: Int64 = 0
+        for folder in children {
+            guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            guard let manifest = try? loadManifest(at: folder) else { continue }
+            if manifest.startTime < cutoff {
+                freed += diskUsage(of: folder)
+                try fm.removeItem(at: folder)
+                deleted += 1
+            }
+        }
+        return (deleted, freed)
+    }
 }

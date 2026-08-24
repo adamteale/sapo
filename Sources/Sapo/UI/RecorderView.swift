@@ -92,13 +92,13 @@ struct RecorderView: View {
     private var controlsBar: some View {
         HStack {
             if isRecording {
-                Button("Stop", role: .destructive) { showStopConfirmation = true }
+                Button("Stop ⌘R", role: .destructive) { showStopConfirmation = true }
                     .controlSize(.large)
                 Text(Self.format(elapsed))
                     .font(.system(.title3, design: .monospaced))
                     .foregroundStyle(.red)
             } else {
-                Button("Record") { model.startRecording() }
+                Button("Record ⌘R") { model.startRecording() }
                     .controlSize(.large)
                     .disabled(model.selectedSourceIDs.isEmpty)
             }
