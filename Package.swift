@@ -11,6 +11,10 @@ let package = Package(
             path: "Sources/Sapo",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .executableTarget(
+            name: "SapoTabHost",
+            path: "Sources/SapoNativeHost"
+        ),
         .testTarget(
             name: "SapoTests",
             dependencies: ["Sapo"],
