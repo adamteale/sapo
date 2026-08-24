@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
 
     @Published var appSources: [SourceDescriptor] = []
     @Published var micSources: [SourceDescriptor] = []
+    @Published var tabSources: [SourceDescriptor] = []
     @Published var selectedSourceIDs: Set<String> = []
     @Published var permissionDenied = false
     /// Window-visibility gate: meter taps only run while the Sapo window is
@@ -55,7 +56,7 @@ final class AppModel: ObservableObject {
     }
 
     var selectedSources: [SourceDescriptor] {
-        (appSources + micSources).filter { selectedSourceIDs.contains($0.id) }
+        (appSources + micSources + tabSources).filter { selectedSourceIDs.contains($0.id) }
     }
 
     /// WAV: rate × channels × 2 bytes; ALAC ≈ 50% of WAV.
@@ -118,7 +119,7 @@ final class AppModel: ObservableObject {
     /// metered.
     func reconcileMeters() {
         guard metersOn else { meters.stopAll(); return }
-        let rows = (appSources + micSources)
+        let rows = (appSources + micSources + tabSources)
         let sources = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         meters.reconcile(targets: meterTargets(rowIDs: rows.map(\.id),
                                                windowVisible: metersOn,
@@ -129,7 +130,17 @@ final class AppModel: ObservableObject {
     func refreshSources() {
         appSources = registry.currentAppSources()
         micSources = registry.currentMicSources()
+        // Tab sources are refreshed separately via refreshTabSources().
         // New rows need meter chains started; gone rows need theirs stopped.
+        reconcileMeters()
+    }
+
+    /// Refresh tab sources from Chrome extension (PoC: static list for now).
+    func refreshTabSources() {
+        // PoC: generate placeholder tab sources that would be populated
+        // by the Chrome extension. In production, these come from
+        // chrome.tabs.query via the extension.
+        tabSources = []
         reconcileMeters()
     }
 
@@ -140,7 +151,7 @@ final class AppModel: ObservableObject {
             if selectedSourceIDs.contains(id) {
                 engine.removeSource(id: id)
                 selectedSourceIDs.remove(id)
-            } else if let source = (appSources + micSources).first(where: { $0.id == id }) {
+            } else if let source = (appSources + micSources + tabSources).first(where: { $0.id == id }) {
                 do {
                     try engine.addSource(source)
                     selectedSourceIDs.insert(id)
@@ -163,7 +174,7 @@ final class AppModel: ObservableObject {
             if mutedSourceIDs.contains(id) {
                 // Unmute: restore the chain.
                 mutedSourceIDs.remove(id)
-                if let source = (appSources + micSources).first(where: { $0.id == id }) {
+                if let source = (appSources + micSources + tabSources).first(where: { $0.id == id }) {
                     selectedSourceIDs.insert(id)
                     do {
                         try engine.addSource(source)

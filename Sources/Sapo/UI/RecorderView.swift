@@ -48,12 +48,26 @@ struct RecorderView: View {
                     sourceRow(source)
                 }
             }
+            if model.settings.tabCaptureEnabled {
+                Section("Tab capture") {
+                    ForEach(model.tabSources) { source in
+                        sourceRow(source)
+                    }
+                    if model.tabSources.isEmpty {
+                        Button("Refresh tabs") {
+                            model.refreshTabSources()
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section("Microphone") {
                 ForEach(model.micSources) { source in
                     sourceRow(source)
                 }
             }
-            if model.appSources.isEmpty && model.micSources.isEmpty {
+            if model.appSources.isEmpty && model.micSources.isEmpty && model.tabSources.isEmpty {
                 Text("No audio sources found — start playing audio in an app, then refresh.")
                     .font(.callout).foregroundStyle(.secondary)
             }
