@@ -139,6 +139,38 @@ import Testing
     }
 }
 
+@MainActor
+@Suite("AppModel mute state") struct AppModelMuteTests {
+    @Test func idleToggleMuteTogglesSelection() {
+        let model = AppModel.makeIdle()
+        model.appSources = [SourceDescriptor(id: "com.app.a", kind: .application, name: "App A", bundleIdentifier: nil, deviceUID: nil)]
+
+        model.toggleMute("com.app.a")
+        #expect(model.selectedSourceIDs == ["com.app.a"])
+        #expect(model.mutedSourceIDs.isEmpty)
+
+        model.toggleMute("com.app.a")
+        #expect(model.selectedSourceIDs == [])
+        #expect(model.mutedSourceIDs.isEmpty)
+    }
+
+    @Test func mutedSourceIDsStartsEmpty() {
+        let model = AppModel.makeIdle()
+        #expect(model.mutedSourceIDs.isEmpty)
+    }
+
+    @Test func toggleMuteOnUnselectedSourceDoesNothing() {
+        let model = AppModel.makeIdle()
+        model.appSources = [SourceDescriptor(id: "com.app.a", kind: .application, name: "App A", bundleIdentifier: nil, deviceUID: nil)]
+
+        model.toggleMute("com.app.a") // selects it
+        #expect(model.selectedSourceIDs == ["com.app.a"])
+
+        model.toggleMute("com.app.a") // deselects it
+        #expect(model.selectedSourceIDs == [])
+    }
+}
+
 // MARK: - Helpers
 
 extension AppModel {

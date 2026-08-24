@@ -27,6 +27,9 @@ final class AppModel: ObservableObject {
     /// Which tab is active (0 = Recorder, 1 = Sessions). Driven by MainTabs
     /// so RecorderView can switch to Sessions after a recording ends.
     @Published var activeTab = 0
+    /// Source IDs whose stem is muted during recording (their chain is stopped
+    /// and removed; unmute restores it). Empty when idle.
+    @Published var mutedSourceIDs: Set<String> = []
 
     private let registry = SourceRegistry()
     private var cancellables: Set<AnyCancellable> = []
@@ -151,6 +154,34 @@ final class AppModel: ObservableObject {
             else { selectedSourceIDs.insert(id) }
         }
         reconcileMeters()
+    }
+
+    /// Toggle mute for a source. During recording, stops the chain and records
+    /// the muted state; unmute restores the chain. Idle: toggles selection.
+    func toggleMute(_ id: String) {
+        if case .recording = engine.state {
+            if mutedSourceIDs.contains(id) {
+                // Unmute: restore the chain.
+                mutedSourceIDs.remove(id)
+                if let source = (appSources + micSources).first(where: { $0.id == id }) {
+                    selectedSourceIDs.insert(id)
+                    do {
+                        try engine.addSource(source)
+                    } catch {
+                        lastError = error.localizedDescription
+                    }
+                }
+            } else {
+                // Mute: stop and remove the chain.
+                mutedSourceIDs.insert(id)
+                engine.removeSource(id: id)
+                selectedSourceIDs.remove(id)
+            }
+            reconcileMeters()
+        } else {
+            // Idle: just toggle selection (same as toggleSource).
+            toggleSource(id)
+        }
     }
 
     func requestMicPermission(_ done: @escaping (Bool) -> Void) {

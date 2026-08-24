@@ -63,11 +63,22 @@ struct RecorderView: View {
 
     private func sourceRow(_ source: SourceDescriptor) -> some View {
         let selected = model.selectedSourceIDs.contains(source.id)
+        let muted = model.mutedSourceIDs.contains(source.id)
         return HStack {
             Toggle(source.name, isOn: Binding(
                 get: { selected },
                 set: { _ in model.toggleSource(source.id) }))
             Spacer()
+            // Mute toggle: stop speaker icon when muted, unmute restores chain.
+            Button {
+                model.toggleMute(source.id)
+            } label: {
+                Image(systemName: muted ? "speaker.slash.circle.fill" : "speaker.wave.2.circle.fill")
+                    .foregroundStyle(muted ? .red : .secondary)
+                    .help(muted ? "Unmute" : "Mute")
+            }
+            .buttonStyle(.borderless)
+            .disabled(!selected)
             // Meter column on EVERY row, idle and recording: level(for:) reads
             // engine levels for recording chains, meter taps otherwise. Dimmed
             // while the window gate is off (window hidden / mic denied).
@@ -75,6 +86,7 @@ struct RecorderView: View {
                 .frame(width: 90)
                 .opacity(model.metersOn ? 1 : 0.25)
         }
+        .opacity(muted ? 0.5 : 1)
     }
 
     private var controlsBar: some View {
