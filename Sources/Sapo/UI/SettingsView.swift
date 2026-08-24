@@ -32,6 +32,14 @@ struct SettingsView: View {
                 Button("Clean up old sessions…") { showCleanupConfirmation = true }
                     .disabled(settings.maxSessionAge == nil || settings.maxSessionAge! == 0)
             }
+            Section("Tab capture") {
+                Toggle("Enable tab capture", isOn: $settings.tabCaptureEnabled)
+                if settings.tabCaptureEnabled {
+                    Stepper("TCP port: \(settings.tabCapturePort)", value: $settings.tabCapturePort, in: 1024...65535)
+                        .disabled(settings.tabCapturePort == 5678)
+                    Text("Chrome extension forwards tab audio to this port.").font(.caption)
+                }
+            }
             Toggle("Launch at login", isOn: $settings.launchAtLogin)
             Picker("Default microphone", selection: Binding(
                 get: { settings.defaultMicDeviceUID ?? "" },

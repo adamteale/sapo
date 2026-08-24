@@ -33,6 +33,12 @@ final class SettingsStore: ObservableObject {
     @Published var defaultMicDeviceUID: String? {
         didSet { defaults.set(defaultMicDeviceUID ?? "", forKey: "defaultMicDeviceUID") }
     }
+    @Published var tabCaptureEnabled: Bool {
+        didSet { defaults.set(tabCaptureEnabled, forKey: "tabCaptureEnabled") }
+    }
+    @Published var tabCapturePort: Int {
+        didSet { defaults.set(tabCapturePort, forKey: "tabCapturePort") }
+    }
 
     private let defaults: UserDefaults
 
@@ -45,6 +51,9 @@ final class SettingsStore: ObservableObject {
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         let mic = defaults.string(forKey: "defaultMicDeviceUID")
         defaultMicDeviceUID = (mic?.isEmpty == false) ? mic : nil
+        tabCaptureEnabled = defaults.bool(forKey: "tabCaptureEnabled")
+        tabCapturePort = defaults.integer(forKey: "tabCapturePort")
+        if tabCapturePort == 0 { tabCapturePort = 5678; defaults.set(5678, forKey: "tabCapturePort") }
     }
 
     private func applyLaunchAtLogin(_ on: Bool) {
