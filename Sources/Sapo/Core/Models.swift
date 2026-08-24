@@ -3,6 +3,7 @@ import Foundation
 enum SourceKind: String, Codable, CaseIterable {
     case application
     case microphone
+    case tabCapture
 }
 
 struct SourceDescriptor: Codable, Hashable, Identifiable {

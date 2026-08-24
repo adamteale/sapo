@@ -16,6 +16,9 @@ enum SourceResolver {
             guard let uid = source.deviceUID,
                   let deviceID = registry.deviceID(forUID: uid) else { return nil }
             return (deviceID, nil)
+        case .tabCapture:
+            // Tab capture has no Core Audio device — handled separately
+            return nil
         }
     }
 }
