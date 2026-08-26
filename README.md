@@ -69,7 +69,7 @@ Export happens post-session: Sapo reads the manifest and the individual stem fil
 
 ## Tab Capture (PoC)
 
-Sapo can capture audio from Chrome tabs via a Chrome extension and native messaging host.
+Sapo can capture audio from a single browser tab (Chrome or Brave) via a browser extension and native messaging host. Per-app capture works in any browser; tab capture adds per-tab precision.
 
 ### Setup
 
@@ -83,8 +83,8 @@ Sapo can capture audio from Chrome tabs via a Chrome extension and native messag
    ./scripts/register-native-host.sh
    ```
 
-3. Load the Chrome extension:
-   - Open `chrome://extensions`
+3. Load the browser extension:
+   - Open your browser's extensions page (Brave: `brave://extensions`, Chrome: `chrome://extensions`)
    - Enable **Developer mode** (top right toggle)
    - Click **Load unpacked** and select the `chrome-extension/` directory
    - The extension ID is deterministic (`nhglbplanbiljndnbkaadecapgbbcdcb` — pinned via a `key` in the extension manifest), so no manual ID configuration is needed

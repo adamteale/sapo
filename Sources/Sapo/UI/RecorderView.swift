@@ -48,8 +48,8 @@ struct RecorderView: View {
                     sourceRow(source)
                 }
             }
-            if model.settings.tabCaptureEnabled {
-                Section("Tab capture") {
+            Section("Tab capture") {
+                if model.settings.tabCaptureEnabled {
                     ForEach(model.tabSources) { source in
                         sourceRow(source)
                     }
@@ -60,6 +60,17 @@ struct RecorderView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     }
+                } else {
+                    // One-click enable: no need to hunt through Settings.
+                    Toggle("Enable tab capture", isOn: Binding(
+                        get: { model.settings.tabCaptureEnabled },
+                        set: { newValue in
+                            model.settings.tabCaptureEnabled = newValue
+                            model.refreshTabSources()
+                        }))
+                    Text("Captures a single browser tab via the Sapo extension (Chrome/Brave) — other app audio stays untouched.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             Section("Microphone") {

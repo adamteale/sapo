@@ -1,8 +1,9 @@
 #!/bin/bash
-# Register SapoTabHost as a Chrome native messaging host.
+# Register SapoTabHost as a Chromium native messaging host.
 # Usage: ./scripts/register-native-host.sh [path-to-SapoTabHost]
 #
 # If no path is given, looks for SapoTabHost in .build/release/.
+# Registers for every Chromium browser found: Chrome, Brave, Edge, Chromium.
 
 set -euo pipefail
 
@@ -46,10 +47,27 @@ cat > "$MANIFEST_FILE" << EOF
 EOF
 
 echo "Registered native messaging host at: $MANIFEST_FILE"
+
+# Chromium browsers each look in their own NativeMessagingHosts directory.
+# Copy the same manifest into every installed browser's directory so
+# connectNative() resolves regardless of which browser runs the extension.
+BROWSER_DIRS=(
+    "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+    "$HOME/Library/Application Support/Microsoft Edge/NativeMessagingHosts"
+    "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
+)
+for DIR in "${BROWSER_DIRS[@]}"; do
+    if [ -d "$(dirname "$DIR")" ]; then
+        mkdir -p "$DIR"
+        cp "$MANIFEST_FILE" "$DIR/${HOST_NAME}.json"
+        echo "Registered for $(basename "$(dirname "$(dirname "$DIR")")"): $DIR/${HOST_NAME}.json"
+    fi
+done
+
 echo "Allowed extension ID: $EXTENSION_ID (pinned via manifest key)"
 echo ""
 echo "Next steps:"
-echo "1. Open chrome://extensions in Chrome"
+echo "1. Open the extensions page in your browser (Brave: brave://extensions, Chrome: chrome://extensions)"
 echo "2. Enable Developer mode (top right toggle)"
 echo "3. Click 'Load unpacked' and select the chrome-extension/ directory"
 echo "4. Verify the extension ID shown matches: $EXTENSION_ID"
