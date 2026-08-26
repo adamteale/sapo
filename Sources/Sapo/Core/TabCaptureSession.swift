@@ -85,8 +85,7 @@ final class TabCaptureSession: CaptureUnit {
             // Write PCM data to stem
             do {
                 let frameCount = UInt32(pcmData.count / 4) // Float32 = 4 bytes
-                let bufferList = pcmDataToBufferList(pcmData)
-                try self.stemWriter.write(bufferList, frameCount: frameCount)
+                try self.writePCM(pcmData, frameCount: frameCount)
                 self.totalFrames += frameCount
                 
                 // Update level meter (RMS)
@@ -133,20 +132,19 @@ final class TabCaptureSession: CaptureUnit {
         }
     }
     
-    func pcmDataToBufferList(_ data: Data) -> UnsafePointer<AudioBufferList> {
-        // Create a simple AudioBufferList from the PCM data
-        // SAFETY: ExtAudioFileWrite reads synchronously, so the pointer is valid
-        // for the duration of the write call. We use withUnsafePointer to satisfy
-        // Swift's temporary pointer rules.
-        var result: UnsafePointer<AudioBufferList>!
-        data.withUnsafeBytes { raw in
-            var abl = AudioBufferList(mNumberBuffers: 1,
-                                      mBuffers: AudioBuffer(mNumberChannels: 1,
-                                                            mDataByteSize: UInt32(data.count),
-                                                            mData: UnsafeMutableRawPointer(mutating: raw.baseAddress)))
-            result = withUnsafePointer(to: &abl) { $0 }
+    /// Write raw Float32 mono PCM to the stem. Constructs the AudioBufferList
+    /// and performs the write within one scope — a pointer to a stack-local
+    /// buffer list must never outlive this call (dangling-pointer segfault).
+    func writePCM(_ data: Data, frameCount: UInt32) throws {
+        var abl = AudioBufferList(mNumberBuffers: 1,
+                                  mBuffers: AudioBuffer(mNumberChannels: 1,
+                                                        mDataByteSize: UInt32(data.count),
+                                                        mData: nil))
+        try data.withUnsafeBytes { raw in
+            abl.mBuffers.mData = UnsafeMutableRawPointer(mutating: raw.baseAddress)
+            // &abl is valid for the duration of this synchronous write call.
+            try stemWriter.write(&abl, frameCount: frameCount)
         }
-        return result
     }
 }
 

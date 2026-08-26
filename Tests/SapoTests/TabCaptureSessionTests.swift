@@ -30,20 +30,4 @@ final class TabCaptureSessionParsingTests: XCTestCase {
         XCTAssertEqual(header.sampleRate, 48000)
         XCTAssertEqual(header.frameCount, 1024)
     }
-
-    /// Helper to create a valid AudioBufferList from PCM data.
-    private func createBufferList(from data: Data) -> UnsafePointer<AudioBufferList> {
-        // SAFETY: ExtAudioFileWrite reads synchronously, so the pointer is valid
-        // for the duration of the write call. We use withUnsafePointer to satisfy
-        // Swift's temporary pointer rules.
-        var result: UnsafePointer<AudioBufferList>!
-        data.withUnsafeBytes { raw in
-            var abl = AudioBufferList(mNumberBuffers: 1,
-                                      mBuffers: AudioBuffer(mNumberChannels: 1,
-                                                            mDataByteSize: UInt32(data.count),
-                                                            mData: UnsafeMutableRawPointer(mutating: raw.baseAddress)))
-            result = withUnsafePointer(to: &abl) { $0 }
-        }
-        return result
-    }
 }

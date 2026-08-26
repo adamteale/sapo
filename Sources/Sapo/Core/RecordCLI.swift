@@ -44,6 +44,46 @@ enum RecordCLI {
         }
     }
 
+    /// Tab-capture stem: listens on TCP 127.0.0.1:5678 for the native host
+    /// (spawned by the Chrome extension), writing Float32 PCM to a stem.
+    /// Print a meter bar per received chunk; exit after `seconds`.
+    static func recordTab(seconds: Double, outDir: URL) -> Int32 {
+        let stem = outDir.appendingPathComponent("stem-tab.caf")
+        let session: TabCaptureSession
+        do {
+            session = try TabCaptureSession.make(stemURL: stem, format: .alac, tabID: "cli")
+        } catch {
+            FileHandle.standardError.write("tab session error: \(error)\n".data(using: .utf8)!)
+            return 1
+        }
+        var teardownDone = false
+        session.onLevel = { level in
+            let filled = min(max(Int(level * 30), 0), 30)
+            let bar = String(repeating: "█", count: filled) + String(repeating: " ", count: 30 - filled)
+            print("  [\(bar)] tab")
+        }
+        session.onEnded = { _ in teardownDone = true }
+        do {
+            try session.start()
+        } catch {
+            FileHandle.standardError.write("start error: \(error) — is another Sapo recording already listening on 5678?\n".data(using: .utf8)!)
+            return 1
+        }
+        print("listening for tab capture on 127.0.0.1:5678 for \(seconds)s…")
+        print("(click Start Capture in the Sapo extension popup, or pipe audio into SapoTabHost)")
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        session.stop(reason: "sessionEnd")
+        while !teardownDone {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        let size = ((try? FileManager.default.attributesOfItem(atPath: stem.path))?[.size] as? Int) ?? 0
+        print("wrote \(stem.path) (\(size) bytes)")
+        return 0
+    }
+
     /// Meter-only capture: resolves a source (app bundleID / pid:N, or "mic"
     /// for the default input device), prints a ~10 Hz bar for N seconds, then
     /// tears the chain down. No files are written. Unknown id → stderr + 1.

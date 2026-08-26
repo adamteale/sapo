@@ -44,21 +44,21 @@ struct NativeHost {
         var tcpConnection: TCPConnection?
         
         while true {
-            // Read 4-byte length prefix
-            guard let lengthData = try? stdinFile.read(upToCount: 4) else {
+            // Read exactly 4 bytes (pipes deliver short reads — loop until full)
+            guard let lengthData = readExact(stdinFile, count: 4) else {
                 // EOF or error — Chrome disconnected
                 break
             }
-            guard lengthData.count == 4 else { continue }
             
             // Convert native-endian (little-endian on macOS) to UInt32
             let lengthBytes = lengthData.withUnsafeBytes { ptr in
                 ptr.load(as: UInt32.self)
             }
             let messageLength = Int(lengthBytes)
+            guard messageLength > 0, messageLength <= 64 * 1024 * 1024 else { continue }
             
-            // Read JSON body
-            guard let jsonBody = try? stdinFile.read(upToCount: messageLength) else {
+            // Read exactly messageLength bytes of JSON
+            guard let jsonBody = readExact(stdinFile, count: messageLength) else {
                 break
             }
             
@@ -111,6 +111,20 @@ struct NativeHost {
         }
         
         tcpConnection?.disconnect()
+    }
+    
+    /// Read exactly `count` bytes from a FileHandle, looping across short
+    /// pipe reads. Returns nil on EOF before any byte; empty Data if EOF hit
+    /// mid-message (caller treats both as disconnect).
+    private static func readExact(_ file: FileHandle, count: Int) -> Data? {
+        var data = Data(capacity: count)
+        while data.count < count {
+            guard let chunk = try? file.read(upToCount: count - data.count), !chunk.isEmpty else {
+                return data.isEmpty ? nil : Data()
+            }
+            data.append(chunk)
+        }
+        return data
     }
     
     private static func sendNativeMessage(stdout: FileHandle, type: String, tabId: String, message: String?) {

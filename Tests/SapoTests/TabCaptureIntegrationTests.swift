@@ -31,10 +31,9 @@ final class TabCaptureIntegrationTests: XCTestCase {
         // Simulate audio data: 1 second of 48kHz mono Float32 silence
         let frameCount: UInt32 = 48000
         let pcmData = Data(repeating: 0, count: Int(frameCount) * 4)
-        let bufferList = createBufferList(from: pcmData)
 
         // Write directly (simulating TCP callback)
-        try session.stemWriter.write(bufferList, frameCount: frameCount)
+        try session.writePCM(pcmData, frameCount: frameCount)
 
         // Verify file exists and is valid
         XCTAssertTrue(FileManager.default.fileExists(atPath: stemURL.path))
@@ -52,9 +51,8 @@ final class TabCaptureIntegrationTests: XCTestCase {
         // Write 0.5 seconds of audio
         let frameCount: UInt32 = 24000
         let pcmData = Data(repeating: 0, count: Int(frameCount) * 4)
-        let bufferList = createBufferList(from: pcmData)
 
-        try session.stemWriter.write(bufferList, frameCount: frameCount)
+        try session.writePCM(pcmData, frameCount: frameCount)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: stemURL.path))
     }
@@ -66,8 +64,7 @@ final class TabCaptureIntegrationTests: XCTestCase {
         for _ in 0..<3 {
             let frameCount: UInt32 = 4800
             let pcmData = Data(repeating: 0, count: Int(frameCount) * 4)
-            let bufferList = createBufferList(from: pcmData)
-            try session.stemWriter.write(bufferList, frameCount: frameCount)
+            try session.writePCM(pcmData, frameCount: frameCount)
         }
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: stemURL.path))
@@ -79,8 +76,7 @@ final class TabCaptureIntegrationTests: XCTestCase {
         // Write some data
         let frameCount: UInt32 = 1000
         let pcmData = Data(repeating: 0, count: Int(frameCount) * 4)
-        let bufferList = createBufferList(from: pcmData)
-        try session.stemWriter.write(bufferList, frameCount: frameCount)
+        try session.writePCM(pcmData, frameCount: frameCount)
 
         // Stop with reason
         session.stop(reason: "userDisconnected")
@@ -143,21 +139,5 @@ final class TabCaptureIntegrationTests: XCTestCase {
         XCTAssertEqual(file.length, 7200, "expected summed frame count")
         XCTAssertEqual(file.processingFormat.sampleRate, 48000, accuracy: 0.1)
         XCTAssertEqual(file.processingFormat.channelCount, 1)
-    }
-    
-    /// Helper to create a valid AudioBufferList from PCM data.
-    private func createBufferList(from data: Data) -> UnsafePointer<AudioBufferList> {
-        // SAFETY: ExtAudioFileWrite reads synchronously, so the pointer is valid
-        // for the duration of the write call. We use withUnsafePointer to satisfy
-        // Swift's temporary pointer rules.
-        var result: UnsafePointer<AudioBufferList>!
-        data.withUnsafeBytes { raw in
-            var abl = AudioBufferList(mNumberBuffers: 1,
-                                      mBuffers: AudioBuffer(mNumberChannels: 1,
-                                                            mDataByteSize: UInt32(data.count),
-                                                            mData: UnsafeMutableRawPointer(mutating: raw.baseAddress)))
-            result = withUnsafePointer(to: &abl) { $0 }
-        }
-        return result
     }
 }

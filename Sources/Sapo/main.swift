@@ -40,6 +40,13 @@ func runCLI() -> Int32? {
         let outDir = URL(fileURLWithPath: flagValue("--out", in: args, default: NSTemporaryDirectory()))
         try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
         return RecordCLI.recordMic(seconds: seconds, outDir: outDir)
+    case "--record-tab":
+        // --record-tab --seconds N --out DIR — listens for the Chrome
+        // extension's native host on 127.0.0.1:5678 and writes a tab stem.
+        let seconds = Double(flagValue("--seconds", in: args, default: "10")) ?? 10
+        let outDir = URL(fileURLWithPath: flagValue("--out", in: args, default: NSTemporaryDirectory()))
+        try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        return RecordCLI.recordTab(seconds: seconds, outDir: outDir)
     case "--meter":
         // --meter <bundleID|pid:N|mic> --seconds N
         guard args.count >= 3 else { return 64 }
