@@ -188,7 +188,7 @@ import Testing
         model.refreshTabSources()
         #expect(model.tabSources.count == 1)
         #expect(model.tabSources[0].kind == .tabCapture)
-        #expect(model.tabSources[0].name == "Chrome Tab")
+        #expect(model.tabSources[0].name == "Browser Tab")
         // id suffix is the tabID RecorderEngine extracts: "tab-chrome-0" → "0"
         #expect(model.tabSources[0].id.components(separatedBy: "-").last == "0")
     }

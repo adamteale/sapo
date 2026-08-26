@@ -53,6 +53,9 @@ struct RecorderView: View {
                     ForEach(model.tabSources) { source in
                         sourceRow(source)
                     }
+                    Text("Pick the specific tab from the Sapo extension popup in your browser's toolbar (Start Capture), then record here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     if model.tabSources.isEmpty {
                         Button("Refresh tabs") {
                             model.refreshTabSources()

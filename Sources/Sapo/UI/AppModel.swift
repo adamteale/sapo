@@ -136,14 +136,14 @@ final class AppModel: ObservableObject {
         reconcileMeters()
     }
 
-    /// Refresh tab sources. PoC: one static "Chrome Tab" row — selecting it
+    /// Refresh tab sources. PoC: one static "Browser Tab" row — selecting it
     /// makes startSession() spin up a TabCaptureSession whose TCP server the
     /// extension's native host connects to once the user clicks Start Capture.
     func refreshTabSources() {
         if settings.tabCaptureEnabled {
             tabSources = [SourceDescriptor(id: "tab-chrome-0",
                                            kind: .tabCapture,
-                                           name: "Chrome Tab",
+                                           name: "Browser Tab",
                                            bundleIdentifier: nil,
                                            deviceUID: nil)]
         } else {

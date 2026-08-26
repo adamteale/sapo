@@ -7,6 +7,19 @@ enum StemCleanupBehavior: String, CaseIterable {
     case ask, always, never
 }
 
+enum TabCapturePluginDetector {
+    static func isInstalled(fileExists: (String) -> Bool = FileManager.default.fileExists(atPath:)) -> Bool {
+        let home = NSHomeDirectory()
+        let manifests = [
+            "\(home)/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json",
+            "\(home)/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json",
+            "\(home)/Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json",
+            "\(home)/Library/Application Support/Chromium/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json",
+        ]
+        return manifests.contains(where: fileExists)
+    }
+}
+
 /// Persisted user preferences, backed by `UserDefaults`.
 ///
 /// Values round-trip through a `UserDefaults` suite so the suite can be
@@ -42,7 +55,7 @@ final class SettingsStore: ObservableObject {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, pluginInstalled: Bool? = nil) {
         self.defaults = defaults
         stemFormat = StemFormat(rawValue: defaults.string(forKey: "stemFormat") ?? "") ?? .alac
         stemCleanup = StemCleanupBehavior(rawValue: defaults.string(forKey: "stemCleanup") ?? "") ?? .ask
@@ -51,7 +64,16 @@ final class SettingsStore: ObservableObject {
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         let mic = defaults.string(forKey: "defaultMicDeviceUID")
         defaultMicDeviceUID = (mic?.isEmpty == false) ? mic : nil
-        tabCaptureEnabled = defaults.bool(forKey: "tabCaptureEnabled")
+        if defaults.object(forKey: "tabCaptureEnabled") == nil {
+            // Never explicitly chosen: follow the plugin. Installing the
+            // plugin is itself the opt-in, so the source row shows up without
+            // hunting for a toggle. Deliberately NOT persisted — the default
+            // keeps tracking install state until the user makes an explicit
+            // choice, which then wins forever.
+            tabCaptureEnabled = pluginInstalled ?? TabCapturePluginDetector.isInstalled()
+        } else {
+            tabCaptureEnabled = defaults.bool(forKey: "tabCaptureEnabled")
+        }
         tabCapturePort = defaults.integer(forKey: "tabCapturePort")
         if tabCapturePort == 0 { tabCapturePort = 5678; defaults.set(5678, forKey: "tabCapturePort") }
     }
