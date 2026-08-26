@@ -27,16 +27,10 @@ fi
 # Create manifest directory if it doesn't exist
 mkdir -p "$MANIFEST_DIR"
 
-# Get the extension ID from the manifest (known at build time)
-EXTENSION_DIR="$(pwd)/chrome-extension"
-if [ ! -f "$EXTENSION_DIR/manifest.json" ]; then
-    echo "Error: chrome-extension/manifest.json not found"
-    exit 1
-fi
-
-# Extract extension ID from manifest (will be set when loaded in Developer mode)
-# Chrome generates a random ID for unpacked extensions, so we note this in the manifest
-EXTENSION_ID="NOT_SET"
+# Extension ID is deterministic: chrome-extension/manifest.json pins a public
+# `key`, so the ID is stable regardless of which directory it's loaded from.
+# ID = first 128 bits of SHA-256(SPKI DER), mapped to a-p.
+EXTENSION_ID="nhglbplanbiljndnbkaadecapgbbcdcb"
 
 # Create manifest
 cat > "$MANIFEST_FILE" << EOF
@@ -52,11 +46,11 @@ cat > "$MANIFEST_FILE" << EOF
 EOF
 
 echo "Registered native messaging host at: $MANIFEST_FILE"
+echo "Allowed extension ID: $EXTENSION_ID (pinned via manifest key)"
 echo ""
 echo "Next steps:"
 echo "1. Open chrome://extensions in Chrome"
 echo "2. Enable Developer mode (top right toggle)"
 echo "3. Click 'Load unpacked' and select the chrome-extension/ directory"
-echo "4. Note the Extension ID shown on the extension card"
-echo "5. Update the allowed_origins in $MANIFEST_FILE with your extension ID"
-echo "6. Reload the extension by clicking the reload icon"
+echo "4. Verify the extension ID shown matches: $EXTENSION_ID"
+echo "5. The extension can now connect to the native host — no manifest editing needed"

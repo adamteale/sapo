@@ -3,6 +3,7 @@
   "name": "Sapo Tab Capture",
   "version": "0.1.0",
   "description": "Capture tab audio for Sapo recording",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqy8xO6/scxL/arTkTFIznd7wBy4v9tpATFm4pTou4H4NxLUG0Fr3rTfR0VPmYq76Y+dXZpXWTK6znZad9dT/xVwX86a4f6uhTgRPfbBdPJC9ZXKtjsEwLKQIqBSeR+RhVR1G4iNpTRkWOEryeqIHfJTXv2xhd9v2nGDLr70jskwXywLvAUOYC9k+aXh9dZsb0HiF58i+puBjhoiqRj9D+h4cSdArARsjTo2t9zCChwf74ztyMFBiHZcVDIPCWqhIHRfO+PuYdxWcEPn/Zxo9ydq6B0BG6DVGTTmhCMnlwrX/4c6cpfVSm7O1At5kR3SM6iB/T7kShFDNO5hzNKxMUQIDAQAB",
   "permissions": [
     "tabCapture",
     "tabs",
@@ -25,8 +26,5 @@
   },
   "offscreen": {
     "document": "offscreen.html"
-  },
-  "nativeMessaging": {
-    "host": "com.sapomac.sapo-tab-capture"
   }
 }

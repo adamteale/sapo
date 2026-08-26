@@ -88,6 +88,62 @@ final class TabCaptureIntegrationTests: XCTestCase {
         // File should still exist (graceful shutdown)
         XCTAssertTrue(FileManager.default.fileExists(atPath: stemURL.path))
     }
+
+    /// True end-to-end TCP loop: starts a real TabCaptureSession (real
+    /// TCPServer on port 5678), connects a socket client speaking the same
+    /// framing as SapoTabHost (newline-terminated JSON header + exact-length
+    /// PCM per message), streams two chunks, then verifies the stem contains
+    /// the summed frames at 48kHz mono.
+    ///
+    /// Requires port 5678 to be free (same as production default).
+    func testTCPStreamingWritesStemFrames() throws {
+        let session = try TabCaptureSession.make(stemURL: stemURL, format: .alac, tabID: "42")
+        session.onLevel = { _ in }
+        let ended = expectation(description: "onEnded fired")
+        session.onEnded = { _ in ended.fulfill() }
+        try session.start()
+
+        // --- Client side: connect like SapoTabHost does ---
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(5678).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var addrBytes = sockaddr()
+        memcpy(&addrBytes, &addr, MemoryLayout<sockaddr_in>.size)
+        XCTAssertEqual(connect(fd, &addrBytes, socklen_t(MemoryLayout<sockaddr_in>.size)), 0, "connect to 127.0.0.1:5678 failed — is the port in use?")
+
+        func sendFramed(_ tabId: String, _ pcm: Data) throws {
+            let header = try JSONEncoder().encode(
+                TabCaptureSession.TCPOutputHeader(tabId: tabId, sampleRate: 48000, frameCount: pcm.count / 4))
+            var framed = header
+            framed.append(0x0A) // newline terminator — same as the host
+            framed.append(pcm)
+            let sent = framed.withUnsafeBytes { raw in
+                Darwin.send(fd, raw.baseAddress?.assumingMemoryBound(to: CChar.self), framed.count, 0)
+            }
+            XCTAssertEqual(sent, framed.count, "short TCP send")
+        }
+
+        // Two chunks: 0.1s + 0.05s of silence = 7200 frames total
+        try sendFramed("42", Data(repeating: 0, count: 4800 * 4))
+        try sendFramed("42", Data(repeating: 0, count: 2400 * 4))
+
+        // Let the server thread consume both messages
+        Thread.sleep(forTimeInterval: 0.5)
+        close(fd)
+
+        session.stop(reason: "testDone")
+        wait(for: [ended], timeout: 5.0)
+
+        // --- Verify the written stem ---
+        let file = try AVAudioFile(forReading: stemURL)
+        XCTAssertEqual(file.length, 7200, "expected summed frame count")
+        XCTAssertEqual(file.processingFormat.sampleRate, 48000, accuracy: 0.1)
+        XCTAssertEqual(file.processingFormat.channelCount, 1)
+    }
     
     /// Helper to create a valid AudioBufferList from PCM data.
     private func createBufferList(from data: Data) -> UnsafePointer<AudioBufferList> {

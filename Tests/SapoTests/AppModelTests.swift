@@ -171,6 +171,41 @@ import Testing
     }
 }
 
+// MARK: - Tab source refresh
+
+@MainActor
+@Suite("AppModel tab sources") struct AppModelTabSourceTests {
+    private func makeModel(tabCaptureEnabled: Bool, suite: String) -> AppModel {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(tabCaptureEnabled, forKey: "tabCaptureEnabled")
+        return AppModel(settings: SettingsStore(defaults: defaults))
+    }
+
+    @Test func tabSourceAppearsWhenEnabled() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabon")
+        #expect(model.tabSources.isEmpty) // not populated until refresh
+        model.refreshTabSources()
+        #expect(model.tabSources.count == 1)
+        #expect(model.tabSources[0].kind == .tabCapture)
+        #expect(model.tabSources[0].name == "Chrome Tab")
+        // id suffix is the tabID RecorderEngine extracts: "tab-chrome-0" → "0"
+        #expect(model.tabSources[0].id.components(separatedBy: "-").last == "0")
+    }
+
+    @Test func noTabSourceWhenDisabled() {
+        let model = makeModel(tabCaptureEnabled: false, suite: "com.sapomac.Sapo.test.taboff")
+        model.refreshTabSources()
+        #expect(model.tabSources.isEmpty)
+    }
+
+    @Test func refreshSourcesPopulatesTabSources() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabrefresh")
+        model.refreshSources()
+        #expect(model.tabSources.count == 1)
+    }
+}
+
 // MARK: - Helpers
 
 extension AppModel {

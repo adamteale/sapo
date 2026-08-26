@@ -39,7 +39,8 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       // Create source from media stream
       const source = audioContext.createMediaStreamSource(stream);
       
-      // Load and connect AudioWorklet
+      // Load worklet and connect native messaging BEFORE starting the audio graph,
+      // so no early audio chunks are dropped before the port exists.
       // Use blob URL for CSP-safe loading
       const workletCode = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
@@ -95,10 +96,6 @@ registerProcessor('pcm-capture', PcmCaptureProcessor);
       await audioContext.audioWorklet.addModule(blobUrl);
       workletNode = new AudioWorkletNode(audioContext, 'pcm-capture');
       
-      // Connect: source → worklet → destination (keeps audio playing)
-      source.connect(workletNode);
-      workletNode.connect(audioContext.destination);
-      
       // Listen for audio data from worklet processor
       workletNode.port.onmessage = (event) => {
         if (event.data && event.data.type === 'audio') {
@@ -114,6 +111,11 @@ registerProcessor('pcm-capture', PcmCaptureProcessor);
       };
       
       connectNative();
+      
+      // Connect last: source → worklet → destination (keeps audio playing).
+      // Done after connectNative() so the port exists when audio starts flowing.
+      source.connect(workletNode);
+      workletNode.connect(audioContext.destination);
       
       sendResponse({ success: true });
     } catch (error) {

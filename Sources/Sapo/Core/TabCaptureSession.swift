@@ -197,37 +197,54 @@ final class TCPServer {
     func acceptConnection() {
         guard listenFD >= 0 else { return }
         
-        var clientAddr = sockaddr()
-        var clientAddrLen = socklen_t(MemoryLayout<sockaddr>.size)
-        
-        clientFD = accept(listenFD, &clientAddr, &clientAddrLen)
-        guard clientFD >= 0 else { return }
-        
-        // Read messages: JSON header (variable length, ends with newline) + raw PCM
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            
+            // Outer loop: keep accepting clients so the host can reconnect
+            while let self, self.listenFD >= 0 {
+                var clientAddr = sockaddr()
+                var clientAddrLen = socklen_t(MemoryLayout<sockaddr>.size)
+                
+                let fd = accept(self.listenFD, &clientAddr, &clientAddrLen)
+                guard fd >= 0 else { break }
+                self.clientFD = fd
+                self.readMessages(fd: fd)
+                close(fd)
+                if fd == self.clientFD { self.clientFD = -1 }
+            }
+        }
+    }
+    
+    /// Message framing: newline-terminated JSON header, then exactly
+    /// `frameCount * 4` bytes of Float32 PCM. Repeats until EOF.
+    private func readMessages(fd: CInt) {
+        var buffer = [UInt8](repeating: 0, count: 65536)
+        
+        while true {
+            // Read header line (JSON, ends with \n)
             var headerData = Data()
-            var pcmData = Data()
-            
-            // Read header (JSON, ends with newline)
+            var byte: UInt8 = 0
             while true {
-                var byte: UInt8 = 0
-                let bytesRead = read(self.clientFD, &byte, 1)
-                guard bytesRead > 0 else { break }
+                let n = read(fd, &byte, 1)
+                guard n > 0 else { return } // EOF / client gone
                 headerData.append(byte)
-                if byte == 0x0A { break } // newline
+                if byte == 0x0A { break }
             }
             
-            // Read remaining data (PCM)
-            var buffer = [UInt8](repeating: 0, count: 1024 * 4096)
-            while true {
-                let bytesRead = read(self.clientFD, &buffer, buffer.count)
-                guard bytesRead > 0 else { break }
-                pcmData.append(buffer, count: bytesRead)
+            // Decode header to learn the PCM payload length
+            guard let header = try? JSONDecoder().decode(TabCaptureSession.TCPOutputHeader.self, from: headerData) else {
+                continue // malformed header — skip to next message
+            }
+            let byteCount = header.frameCount * 4
+            
+            // Read exactly byteCount bytes of PCM
+            var pcmData = Data(capacity: byteCount)
+            while pcmData.count < byteCount {
+                let toRead = min(buffer.count, byteCount - pcmData.count)
+                let n = read(fd, &buffer, toRead)
+                guard n > 0 else { return } // EOF mid-message
+                pcmData.append(buffer, count: n)
             }
             
-            self.connectionHandler?(headerData, pcmData)
+            connectionHandler?(headerData, pcmData)
         }
     }
     

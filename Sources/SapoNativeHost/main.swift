@@ -28,10 +28,17 @@ struct NativeHost {
     static func main() {
         let stdinFile = FileHandle.standardInput
         let stdoutFile = FileHandle.standardOutput
+        let stderrFile = FileHandle.standardError
+        
+        func log(_ message: String) {
+            // Native messaging hosts MUST NOT write anything to stdout except
+            // length-prefixed JSON — Chrome kills the host otherwise. Debug goes to stderr.
+            stderrFile.write(Data((message + "\n").utf8))
+        }
         
         // First argument is the calling extension's origin
         let origin = CommandLine.arguments.dropFirst().first ?? ""
-        print("Native host started, origin: \(origin)")
+        log("Native host started, origin: \(origin)")
         
         // TCP connection to Sapo (lazy — connect on first audio message)
         var tcpConnection: TCPConnection?
@@ -65,9 +72,9 @@ struct NativeHost {
                 // Connect TCP on first audio message if not already connected
                 if tcpConnection == nil {
                     do {
-                        tcpConnection = try TCPConnection(host: "localhost", port: 5678)
+                        tcpConnection = try TCPConnection(host: "127.0.0.1", port: 5678)
                     } catch {
-                        print("Failed to connect to Sapo: \(error)")
+                        log("Failed to connect to Sapo: \(error)")
                         sendNativeMessage(stdout: stdoutFile, type: "error", tabId: message.tabId, message: "TCP connection failed")
                         continue
                     }
@@ -86,8 +93,9 @@ struct NativeHost {
                 }
                 
                 let header = TCPOutputHeader(tabId: message.tabId, sampleRate: 48000, frameCount: encodedData.count / 4)
-                let headerJSON = try? JSONEncoder().encode(header)
-                tcpConnection?.write(headerJSON!)
+                var headerJSON = (try? JSONEncoder().encode(header)) ?? Data()
+                headerJSON.append(0x0A) // newline terminator — Sapo's TCP server reads header until \n
+                tcpConnection?.write(headerJSON)
                 tcpConnection?.write(encodedData)
                 
             case "silence":
@@ -95,7 +103,7 @@ struct NativeHost {
                 break
                 
             case "error":
-                print("Chrome error: \(message.message ?? "unknown")")
+                log("Chrome error: \(message.message ?? "unknown")")
                 
             default:
                 break

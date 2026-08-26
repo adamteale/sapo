@@ -130,17 +130,24 @@ final class AppModel: ObservableObject {
     func refreshSources() {
         appSources = registry.currentAppSources()
         micSources = registry.currentMicSources()
-        // Tab sources are refreshed separately via refreshTabSources().
+        refreshTabSources()
         // New rows need meter chains started; gone rows need theirs stopped.
         reconcileMeters()
     }
 
-    /// Refresh tab sources from Chrome extension (PoC: static list for now).
+    /// Refresh tab sources. PoC: one static "Chrome Tab" row — selecting it
+    /// makes startSession() spin up a TabCaptureSession whose TCP server the
+    /// extension's native host connects to once the user clicks Start Capture.
     func refreshTabSources() {
-        // PoC: generate placeholder tab sources that would be populated
-        // by the Chrome extension. In production, these come from
-        // chrome.tabs.query via the extension.
-        tabSources = []
+        if settings.tabCaptureEnabled {
+            tabSources = [SourceDescriptor(id: "tab-chrome-0",
+                                           kind: .tabCapture,
+                                           name: "Chrome Tab",
+                                           bundleIdentifier: nil,
+                                           deviceUID: nil)]
+        } else {
+            tabSources = []
+        }
         reconcileMeters()
     }
 

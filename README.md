@@ -87,24 +87,14 @@ Sapo can capture audio from Chrome tabs via a Chrome extension and native messag
    - Open `chrome://extensions`
    - Enable **Developer mode** (top right toggle)
    - Click **Load unpacked** and select the `chrome-extension/` directory
-   - Note the **Extension ID** shown on the extension card
+   - The extension ID is deterministic (`nhglbplanbiljndnbkaadecapgbbcdcb` — pinned via a `key` in the extension manifest), so no manual ID configuration is needed
 
-4. Update the extension ID in the manifest:
-   ```bash
-   # Edit ~/.config/google-chrome/NativeMessagingHosts/com.sapomac.sapo-tab-capture.json
-   # Replace the EXTENSION_ID placeholder with your actual extension ID
-   ```
-
-5. Reload the extension by clicking the reload icon on the extension card
-
-### Usage
-
-1. Open Sapo
-2. Go to the Recorder tab
-3. Select a Chrome tab source from the list
-4. Open the Chrome extension popup — it will show available tabs
-5. Click **Start Capture** on the tab you want to record
-6. Start recording in Sapo — the tab audio will be captured as a stem
+4. Start recording:
+   - Open Sapo
+   - Go to the Recorder tab
+   - Enable tab capture in Settings if it's off
+   - Click **Start Capture** on the tab you want in the extension popup
+   - Start recording in Sapo — the tab audio arrives as a stem
 
 ### Architecture
 
