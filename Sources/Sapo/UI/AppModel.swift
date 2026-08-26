@@ -74,8 +74,9 @@ final class AppModel: ObservableObject {
     ///
     /// The window is identified structurally, not by title: its title tracks
     /// the selected tab's navigationTitle ("Recorder"/"Sessions"/session
-    /// title), never "Sapo". This app is LSUIElement with exactly one regular
-    /// window, so a visible window that can become main is precisely it.
+    /// title), never "Sapo". Sapo has exactly one regular window (plus the
+    /// menu-bar status item, which owns no windows), so a visible window that
+    /// can become main is precisely it.
     static func stemsWindowVisible() -> Bool {
         NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
     }

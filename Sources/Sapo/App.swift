@@ -3,13 +3,11 @@ import AppKit
 
 /// Hide-on-close window policy. We chose this over the `newWindowForTab:`
 /// fallback because hiding preserves the window's identity and state (the
-/// same NSWindow comes back on Open Sapo…), whereas the sendAction fallback
-/// would create a fresh SwiftUI window whose scene state may not line up with
-/// the original. This app is LSUIElement, so there is no Dock "reopen"
-/// affordance; without this delegate the main window is unrecoverable once
-/// closed (WindowGroup windows are not recreatable from AppKit side), which
-/// would strand both the menu-bar Open Sapo… item and the Record-with-no-
-/// selection path.
+/// same NSWindow comes back on Dock click or Open Sapo…), whereas the
+/// sendAction fallback would create a fresh SwiftUI window whose scene state
+/// may not line up with the original. Sapo is a regular app (Dock icon +
+/// menu bar); applicationShouldHandleReopen restores the hidden window when
+/// the user clicks the Dock icon.
 final class HideOnCloseWindowDelegate: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
@@ -65,6 +63,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // never-keyed window.
             model.windowVisibilityChanged(AppModel.stemsWindowVisible())
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Hide-on-close orders the window out rather than destroying it, so a
+        // Dock click must order it back in — AppKit won't do that on its own
+        // for an ordered-out SwiftUI WindowGroup window.
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+        }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

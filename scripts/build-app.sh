@@ -27,7 +27,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>14.4</string>
-    <key>LSUIElement</key><true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Sapo records audio from applications and your microphone as separate tracks.</string>
 </dict>
