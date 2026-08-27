@@ -182,26 +182,54 @@ import Testing
         return AppModel(settings: SettingsStore(defaults: defaults))
     }
 
-    @Test func tabSourceAppearsWhenEnabled() {
-        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabon")
-        #expect(model.tabSources.isEmpty) // not populated until refresh
-        model.refreshTabSources()
-        #expect(model.tabSources.count == 1)
+    @Test func tabListPushPopulatesPerTabRows() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabs1")
+        model.handleTabList([
+            TabInfo(id: 11, title: "YouTube — Some Song", audible: true),
+            TabInfo(id: 22, title: "GitHub", audible: false),
+        ])
+        #expect(model.tabSources.count == 2)
         #expect(model.tabSources[0].kind == .tabCapture)
-        #expect(model.tabSources[0].name == "Browser Tab")
-        // id suffix is the tabID RecorderEngine extracts: "tab-chrome-0" → "0"
-        #expect(model.tabSources[0].id.components(separatedBy: "-").last == "0")
+        #expect(model.tabSources[0].name == "YouTube — Some Song")
+        // id encodes the tabID RecorderEngine demuxes on: "tab-11" → "11"
+        #expect(model.tabSources[0].id.components(separatedBy: "-").last == "11")
+        #expect(model.tabSources[1].id == "tab-22")
     }
 
-    @Test func noTabSourceWhenDisabled() {
-        let model = makeModel(tabCaptureEnabled: false, suite: "com.sapomac.Sapo.test.taboff")
-        model.refreshTabSources()
+    @Test func longTitlesTruncatedTo60() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabs2")
+        let long = String(repeating: "a", count: 100)
+        model.handleTabList([TabInfo(id: 1, title: long, audible: false)])
+        #expect(model.tabSources[0].name.count == 60)
+        #expect(model.tabSources[0].name.hasSuffix("…"))
+    }
+
+    @Test func noRowsWhenDisabled() {
+        let model = makeModel(tabCaptureEnabled: false, suite: "com.sapomac.Sapo.test.tabs3")
+        model.handleTabList([TabInfo(id: 1, title: "t", audible: false)])
         #expect(model.tabSources.isEmpty)
     }
 
-    @Test func refreshSourcesPopulatesTabSources() {
-        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabrefresh")
-        model.refreshSources()
+    @Test func disablingClearsExistingRows() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabs4")
+        model.handleTabList([TabInfo(id: 1, title: "t", audible: false)])
+        #expect(model.tabSources.count == 1)
+        model.settings.tabCaptureEnabled = false
+        model.refreshTabSources() // explicit refresh applies the setting
+        #expect(model.tabSources.isEmpty)
+    }
+
+    @Test func emptyListClearsRowsWhenEnabled() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabs5")
+        model.handleTabList([TabInfo(id: 1, title: "t", audible: false)])
+        model.handleTabList([]) // browser closed / last tab closed
+        #expect(model.tabSources.isEmpty)
+    }
+
+    @Test func refreshSourcesPreservesRegistryRows() {
+        let model = makeModel(tabCaptureEnabled: true, suite: "com.sapomac.Sapo.test.tabs6")
+        model.handleTabList([TabInfo(id: 5, title: "docs", audible: false)])
+        model.refreshSources() // full refresh must not wipe registry rows
         #expect(model.tabSources.count == 1)
     }
 }

@@ -66,6 +66,9 @@ final class RecorderEngine: ObservableObject {
     @Published private(set) var activeSessionFolder: URL?
 
     private var chains: [(source: SourceDescriptor, unit: CaptureUnit, tap: ProcessTapSession?, fileName: String)] = []
+    /// Shared per-session router demultiplexing all tab-capture sources.
+    /// Created lazily when the first tab source joins; nil'd in stopSession.
+    private var tabRouter: TabCaptureRouter?
     private var manifest: SessionManifest?
     private var store: SessionStore?
     private var workspaceObserver: NSObjectProtocol?
@@ -153,12 +156,13 @@ final class RecorderEngine: ObservableObject {
                     unit = chain
 
                 case .tabCapture:
-                    // Tab capture path: TabCaptureSession
-                    guard let tabID = source.id.components(separatedBy: "-").last else { continue }
-                    let tabSession = try TabCaptureSession.make(stemURL: stemURL,
-                                                                format: format,
-                                                                tabID: tabID)
-                    unit = tabSession
+                    // Tab capture path: one shared router demuxes all tabs on
+                    // a single TCP server; each tab is a TabStemUnit adapter.
+                    if tabRouter == nil { tabRouter = TabCaptureRouter() }
+                    guard let router = tabRouter else { continue }
+                    let tabID = source.id.components(separatedBy: "-").last ?? source.id
+                    try router.registerStem(tabID: tabID, stemURL: stemURL, format: format)
+                    unit = TabStemUnit(router: router, tabID: tabID)
                     tap = nil
                 }
 
@@ -172,6 +176,10 @@ final class RecorderEngine: ObservableObject {
         } catch {
             for item in built { item.unit.stop(reason: "startupFailed") }
             for var tap in built.compactMap(\.tap) { tap.dispose() }
+            // Tab units self-stop the router as the last stem ends; make sure
+            // a failed start leaves no half-open router behind.
+            tabRouter?.stop(reason: "startupFailed")
+            tabRouter = nil
             throw error
         }
 
@@ -366,18 +374,21 @@ final class RecorderEngine: ObservableObject {
             tap = resolved.tap
 
         case .tabCapture:
-            guard let tabID = source.id.components(separatedBy: "-").last else {
+            let tabID = source.id.components(separatedBy: "-").last ?? source.id
+            if tabRouter == nil { tabRouter = TabCaptureRouter() }
+            guard let router = tabRouter else {
                 throw EngineMutationError.unresolvableSource(source.name)
             }
-            let tabSession = try TabCaptureSession.make(stemURL: folder.appendingPathComponent(fileName),
-                                                        format: manifest.stemFormat,
-                                                        tabID: tabID)
-            tabSession.onLevel = { [weak self] level in self?.levels[sourceID] = level }
-            tabSession.onEnded = { [weak self] reason in
+            try router.registerStem(tabID: tabID,
+                                    stemURL: folder.appendingPathComponent(fileName),
+                                    format: manifest.stemFormat)
+            let tabUnit = TabStemUnit(router: router, tabID: tabID)
+            tabUnit.onLevel = { [weak self] level in self?.levels[sourceID] = level }
+            tabUnit.onEnded = { [weak self] reason in
                 MainActor.assumeIsolated { self?.stemEnded(sourceID: sourceID, reason: reason) }
             }
-            try tabSession.start()
-            unit = tabSession
+            try tabUnit.start()
+            unit = tabUnit
             tap = nil
         }
 
@@ -415,6 +426,9 @@ final class RecorderEngine: ObservableObject {
     func stopSession() {
         guard case .recording = state else { return }
         for item in chains { item.unit.stop(reason: "sessionEnd") }
+        // TabStemUnit.stop ends each stem; when the last one ends the router
+        // shuts its server down itself — just drop the reference.
+        tabRouter = nil
         // Deliberately KEPT (deviation from the brief, per controller ruling 1):
         // the brief drops this loop on the assumption that each unit's
         // onEnded("sessionEnd") callback removes it in stemEnded — but on this

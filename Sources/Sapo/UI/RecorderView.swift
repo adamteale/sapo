@@ -53,7 +53,7 @@ struct RecorderView: View {
                     ForEach(model.tabSources) { source in
                         sourceRow(source)
                     }
-                    Text("Pick the specific tab from the Sapo extension popup in your browser's toolbar (Start Capture), then record here.")
+                    Text("Tab rows appear live from your browser (Chrome/Brave). Select the tabs you want here; also click Start Capture on that tab in the Sapo extension popup. Audio from uncaptured tabs is dropped.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if model.tabSources.isEmpty {

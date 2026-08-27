@@ -136,20 +136,53 @@ final class AppModel: ObservableObject {
         reconcileMeters()
     }
 
-    /// Refresh tab sources. PoC: one static "Browser Tab" row — selecting it
-    /// makes startSession() spin up a TabCaptureSession whose TCP server the
-    /// extension's native host connects to once the user clicks Start Capture.
-    func refreshTabSources() {
-        if settings.tabCaptureEnabled {
-            tabSources = [SourceDescriptor(id: "tab-chrome-0",
-                                           kind: .tabCapture,
-                                           name: "Browser Tab",
-                                           bundleIdentifier: nil,
-                                           deviceUID: nil)]
-        } else {
-            tabSources = []
+    /// Last tab list pushed by the extension (via SapoTabHost → registry
+    /// port 5679). Kept so toggling tab capture re-applies without waiting
+    /// for the next push.
+    private(set) var lastTabList: [TabInfo] = []
+    private var tabRegistry: TabRegistryServer?
+
+    /// Start the always-on registry listener (port 5679). Called once from
+    /// app launch — NOT from init, so tests constructing many AppModels
+    /// don't fight over the port.
+    func startTabRegistry() {
+        guard tabRegistry == nil else { return }
+        let server = TabRegistryServer(port: 5679)
+        do {
+            try server.start { [weak self] tabs in
+                DispatchQueue.main.async { self?.handleTabList(tabs) }
+            }
+            tabRegistry = server
+        } catch {
+            print("tab registry not started: \(error)")
         }
+    }
+
+    /// Registry push arrived (also the seam tests drive directly).
+    func handleTabList(_ tabs: [TabInfo]) {
+        lastTabList = tabs
+        applyTabList()
         reconcileMeters()
+    }
+
+    /// Refresh tab sources from the last known registry state. The old static
+    /// "Browser Tab" placeholder is gone — rows are real tabs now.
+    func refreshTabSources() {
+        applyTabList()
+        reconcileMeters()
+    }
+
+    private func applyTabList() {
+        guard settings.tabCaptureEnabled else {
+            if !tabSources.isEmpty { tabSources = [] }
+            return
+        }
+        tabSources = lastTabList.map { info in
+            let title = info.title.count > 60
+                ? String(info.title.prefix(59)) + "…" : info.title
+            return SourceDescriptor(id: "tab-\(info.id)", kind: .tabCapture, name: title,
+                                    bundleIdentifier: nil, deviceUID: nil)
+        }
     }
 
     func toggleSource(_ id: String) {

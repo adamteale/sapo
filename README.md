@@ -102,16 +102,16 @@ Sapo can capture audio from a single browser tab (Chrome or Brave) via a browser
 Chrome Extension → Native Messaging → Swift Host → TCP → Sapo
 ```
 
-- **Chrome extension**: Captures tab audio via `chrome.tabCapture`, processes via `AudioContext` → `AudioWorklet`, sends via native messaging
-- **Swift native host** (`SapoTabHost`): Reads JSON from stdin, forwards PCM over TCP to Sapo
-- **Sapo**: Receives TCP data, writes stem files via `StemWriter`
+- **Browser extension**: Captures per-tab audio via `chrome.tabCapture`, processes via `AudioContext` → `AudioWorklet`, sends via native messaging; pushes live tab lists (title + audible state) so Sapo can show every tab as a source
+- **Swift native host** (`SapoTabHost`): Reads JSON from stdin, forwards tab audio over TCP 5678 and tab lists over TCP 5679
+- **Sapo**: `TabCaptureRouter` demultiplexes the audio stream by tab ID into one stem per selected tab — record multiple tabs at once
 
 ### Limitations
 
-- Single tab at a time
 - DRM-protected sites (Widevine) produce silent audio
-- Chrome extension must be loaded in Developer mode (not from Chrome Web Store)
-- PoC only — no Firefox support, no multi-tab capture, no auto-start
+- Browser extension must be loaded in Developer mode (not from a Web Store)
+- Tab rows refresh on browser events + a 1-minute heartbeat (MV3 service workers sleep); a quiet browser may lag a minute behind
+- PoC only — no Firefox support, no auto-start
 
 ## Roadmap
 

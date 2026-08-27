@@ -11,16 +11,27 @@ import Dispatch
 /// data over TCP to Sapo's TabCaptureSession on localhost:5678.
 
 struct NativeMessage: Codable {
-    let type: String   // "audio", "silence", "error"
+    let type: String   // "audio", "silence", "error", "tablist"
     let tabId: String
     let data: String?  // base64-encoded Float32 PCM (for "audio" type)
     let message: String?  // for "error" type
+    let tabs: [HostTab]?  // for "tablist" type
 }
 
-struct TCPOutputHeader: Codable {
+struct HostTab: Codable {
+    let id: Int
+    let title: String
+    let audible: Bool
+}
+
+struct TabAudioHeader: Codable {
     let tabId: String
     let sampleRate: Int
     let frameCount: Int
+}
+
+struct BrowserTabList: Codable {
+    let tabs: [HostTab]
 }
 
 @main
@@ -40,8 +51,10 @@ struct NativeHost {
         let origin = CommandLine.arguments.dropFirst().first ?? ""
         log("Native host started, origin: \(origin)")
         
-        // TCP connection to Sapo (lazy — connect on first audio message)
-        var tcpConnection: TCPConnection?
+        // TCP connections to Sapo: audio (5678, persistent during capture)
+        // and the registry (5679, short-lived per tab-list push).
+        var audioConnection: TCPConnection?
+        var registryConnection: TCPConnection?
         
         while true {
             // Read exactly 4 bytes (pipes deliver short reads — loop until full)
@@ -70,9 +83,9 @@ struct NativeHost {
             switch message.type {
             case "audio":
                 // Connect TCP on first audio message if not already connected
-                if tcpConnection == nil {
+                if audioConnection == nil {
                     do {
-                        tcpConnection = try TCPConnection(host: "127.0.0.1", port: 5678)
+                        audioConnection = try TCPConnection(host: "127.0.0.1", port: 5678)
                     } catch {
                         log("Failed to connect to Sapo: \(error)")
                         sendNativeMessage(stdout: stdoutFile, type: "error", tabId: message.tabId, message: "TCP connection failed")
@@ -87,16 +100,35 @@ struct NativeHost {
                 }
                 
                 // Send TCP header + raw PCM
-                guard tcpConnection?.isConnected == true else {
+                guard audioConnection?.isConnected == true else {
                     sendNativeMessage(stdout: stdoutFile, type: "error", tabId: message.tabId, message: "TCP not connected")
                     continue
                 }
                 
-                let header = TCPOutputHeader(tabId: message.tabId, sampleRate: 48000, frameCount: encodedData.count / 4)
+                let header = TabAudioHeader(tabId: message.tabId, sampleRate: 48000, frameCount: encodedData.count / 4)
                 var headerJSON = (try? JSONEncoder().encode(header)) ?? Data()
                 headerJSON.append(0x0A) // newline terminator — Sapo's TCP server reads header until \n
-                tcpConnection?.write(headerJSON)
-                tcpConnection?.write(encodedData)
+                audioConnection?.write(headerJSON)
+                audioConnection?.write(encodedData)
+                
+            case "tablist":
+                // Forward the tab list to Sapo's registry (5679) as one
+                // NDJSON line. Short-lived connection per push: connect,
+                // write, disconnect. Sapo keeps accepting clients.
+                guard let tabs = message.tabs else { continue }
+                let payload = BrowserTabList(tabs: tabs)
+                guard var line = try? JSONEncoder().encode(payload) else { continue }
+                line.append(0x0A)
+                if registryConnection?.isConnected != true {
+                    registryConnection = try? TCPConnection(host: "127.0.0.1", port: 5679)
+                }
+                if registryConnection?.isConnected == true {
+                    registryConnection?.write(line)
+                    registryConnection?.disconnect()
+                    registryConnection = nil
+                } else {
+                    log("Registry push skipped — Sapo not listening on 5679")
+                }
                 
             case "silence":
                 // No-op — silence doesn't need TCP relay
@@ -110,7 +142,8 @@ struct NativeHost {
             }
         }
         
-        tcpConnection?.disconnect()
+        audioConnection?.disconnect()
+        registryConnection?.disconnect()
     }
     
     /// Read exactly `count` bytes from a FileHandle, looping across short
@@ -128,7 +161,7 @@ struct NativeHost {
     }
     
     private static func sendNativeMessage(stdout: FileHandle, type: String, tabId: String, message: String?) {
-        let msg = NativeMessage(type: type, tabId: tabId, data: nil, message: message)
+        let msg = NativeMessage(type: type, tabId: tabId, data: nil, message: message, tabs: nil)
         let data = try? JSONEncoder().encode(msg)
         var length = UInt32(data?.count ?? 0).nativeToLittleEndian()
         stdout.write(Data(bytes: &length, count: 4))

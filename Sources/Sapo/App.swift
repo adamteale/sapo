@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let model = AppModel.shared
+        // Always-on tab discovery (extension pushes tab lists via the host).
+        model.startTabRegistry()
         menuBar = MenuBarController(model: model) {
             NSApp.activate(ignoringOtherApps: true)
             for window in NSApp.windows where window.canBecomeMain {

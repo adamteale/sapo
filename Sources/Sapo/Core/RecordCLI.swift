@@ -45,26 +45,25 @@ enum RecordCLI {
     }
 
     /// Tab-capture stem: listens on TCP 127.0.0.1:5678 for the native host
-    /// (spawned by the Chrome extension), writing Float32 PCM to a stem.
+    /// (spawned by the browser extension), writing Float32 PCM to a stem.
     /// Print a meter bar per received chunk; exit after `seconds`.
     static func recordTab(seconds: Double, outDir: URL) -> Int32 {
         let stem = outDir.appendingPathComponent("stem-tab.caf")
-        let session: TabCaptureSession
+        let router = TabCaptureRouter()
         do {
-            session = try TabCaptureSession.make(stemURL: stem, format: .alac, tabID: "cli")
+            try router.registerStem(tabID: "cli", stemURL: stem, format: .alac)
         } catch {
             FileHandle.standardError.write("tab session error: \(error)\n".data(using: .utf8)!)
             return 1
         }
         var teardownDone = false
-        session.onLevel = { level in
+        router.setHandlers(tabID: "cli", onLevel: { level in
             let filled = min(max(Int(level * 30), 0), 30)
             let bar = String(repeating: "█", count: filled) + String(repeating: " ", count: 30 - filled)
             print("  [\(bar)] tab")
-        }
-        session.onEnded = { _ in teardownDone = true }
+        }, onEnded: { _ in teardownDone = true })
         do {
-            try session.start()
+            try router.start()
         } catch {
             FileHandle.standardError.write("start error: \(error) — is another Sapo recording already listening on 5678?\n".data(using: .utf8)!)
             return 1
@@ -75,7 +74,7 @@ enum RecordCLI {
         while Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         }
-        session.stop(reason: "sessionEnd")
+        router.stop(reason: "sessionEnd")
         while !teardownDone {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }

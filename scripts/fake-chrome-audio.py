@@ -20,7 +20,7 @@ for start in range(0, total, CHUNK):
         samples.append(0.25 * math.sin(2 * math.pi * 440.0 * phase / RATE))
         phase += 1
     pcm = struct.pack(f"<{n}f", *samples)
-    body = ('{"type":"audio","tabId":"tab-e2e-1","data":"%s"}'
+    body = ('{"type":"audio","tabId":"cli","data":"%s"}'
             % base64.b64encode(pcm).decode()).encode()
     messages += struct.pack("<I", len(body)) + body
 
