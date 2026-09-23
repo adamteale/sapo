@@ -53,6 +53,13 @@ final class AppModel: ObservableObject {
                 self.reconcileMeters()
             }
             .store(in: &cancellables)
+        // Tearing idle meter taps down the moment the user switches the
+        // setting off matters — every running tap is still rerouting an
+        // app's audio. dropFirst: init reconciles via other paths already.
+        settings.$liveIdleMeters
+            .dropFirst()
+            .sink { [weak self] _ in self?.reconcileMeters() }
+            .store(in: &cancellables)
     }
 
     var selectedSources: [SourceDescriptor] {
@@ -124,7 +131,8 @@ final class AppModel: ObservableObject {
         let sources = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         meters.reconcile(targets: meterTargets(rowIDs: rows.map(\.id),
                                                windowVisible: metersOn,
-                                               recordingSourceIDs: engine.recordingSourceIDs),
+                                               recordingSourceIDs: engine.recordingSourceIDs,
+                                               idleMetersEnabled: settings.liveIdleMeters),
                          sources: sources)
     }
 

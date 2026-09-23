@@ -52,6 +52,13 @@ final class SettingsStore: ObservableObject {
     @Published var tabCapturePort: Int {
         didSet { defaults.set(tabCapturePort, forKey: "tabCapturePort") }
     }
+    /// Opt-in live level meters for non-recording sources while the window is
+    /// open. Default OFF: each idle meter tap on an app source is a real
+    /// process tap that reroutes that app's audio through an aggregate device
+    /// (audible quality change). Recording meters are unaffected by this.
+    @Published var liveIdleMeters: Bool {
+        didSet { defaults.set(liveIdleMeters, forKey: "liveIdleMeters") }
+    }
 
     private let defaults: UserDefaults
 
@@ -74,6 +81,7 @@ final class SettingsStore: ObservableObject {
         } else {
             tabCaptureEnabled = defaults.bool(forKey: "tabCaptureEnabled")
         }
+        liveIdleMeters = defaults.bool(forKey: "liveIdleMeters")
         tabCapturePort = defaults.integer(forKey: "tabCapturePort")
         if tabCapturePort == 0 { tabCapturePort = 5678; defaults.set(5678, forKey: "tabCapturePort") }
     }

@@ -32,6 +32,10 @@ struct SettingsView: View {
                 Button("Clean up old sessions…") { showCleanupConfirmation = true }
                     .disabled(settings.maxSessionAge == nil || settings.maxSessionAge! == 0)
             }
+            Section("Meters") {
+                Toggle("Live meters while idle", isOn: $settings.liveIdleMeters)
+                Text("Level meters for sources you are not recording. Off by default: idle metering taps each audible app's audio, which can slightly change how it sounds. Recording meters are always on.").font(.caption)
+            }
             Section("Tab capture") {
                 Toggle("Enable tab capture", isOn: $settings.tabCaptureEnabled)
                 if settings.tabCaptureEnabled {

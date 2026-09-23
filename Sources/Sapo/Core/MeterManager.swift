@@ -4,8 +4,12 @@ import CoreAudio
 
 /// Pure coordination: which row ids get meter taps right now.
 /// The double-tap rule lives here — recording sources are never metered.
-func meterTargets(rowIDs: [String], windowVisible: Bool, recordingSourceIDs: Set<String>) -> Set<String> {
-    guard windowVisible else { return [] }
+/// Idle metering is opt-in: every meter tap on an application source is a
+/// real process tap that reroutes that app's audio through an aggregate
+/// device (audible quality change), so it must never run by default.
+func meterTargets(rowIDs: [String], windowVisible: Bool, recordingSourceIDs: Set<String>,
+                  idleMetersEnabled: Bool) -> Set<String> {
+    guard windowVisible, idleMetersEnabled else { return [] }
     return Set(rowIDs).subtracting(recordingSourceIDs)
 }
 
