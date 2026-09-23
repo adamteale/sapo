@@ -58,7 +58,33 @@ final class CaptureChain: CaptureUnit {
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &asbd) == noErr,
               asbd.mSampleRate > 0 else { return nil }
+
+        // The delivered data rate is the device's NOMINAL rate (for a tap
+        // aggregate: the main/output device's rate), which can differ from
+        // StreamFormat's reported rate — a 44.1 kHz output clock delivering
+        // a nominally-48 kHz tap mix. Header must match the data.
+        var nominal = Double(0)
+        var nominalSize = UInt32(MemoryLayout<Double>.size)
+        var nominalAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectGetPropertyData(deviceID, &nominalAddress, 0, nil, &nominalSize, &nominal) == noErr {
+            asbd = reconcilingNominalRate(asbd, nominalRate: nominal)
+        }
         return asbd
+    }
+
+    /// Reconcile a stream-format ASBD with the device's nominal rate: when
+    /// the nominal rate is valid and differs, it wins (layout untouched).
+    /// See the test suite for the 44.1 kHz tap-aggregate case.
+    static func reconcilingNominalRate(_ asbd: AudioStreamBasicDescription,
+                                       nominalRate: Double?) -> AudioStreamBasicDescription {
+        var result = asbd
+        if let nominalRate, nominalRate > 0, nominalRate != asbd.mSampleRate {
+            result.mSampleRate = nominalRate
+        }
+        return result
     }
 
     static func make(deviceID: AudioObjectID, scope: AudioObjectPropertyScope,
