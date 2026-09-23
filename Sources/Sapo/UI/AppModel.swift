@@ -129,7 +129,7 @@ final class AppModel: ObservableObject {
         guard metersOn else { meters.stopAll(); return }
         let rows = (appSources + micSources + tabSources)
         let sources = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-        meters.reconcile(targets: meterTargets(rowIDs: rows.map(\.id),
+        meters.reconcile(targets: meterTargets(sources: rows,
                                                windowVisible: metersOn,
                                                recordingSourceIDs: engine.recordingSourceIDs,
                                                idleMetersEnabled: settings.liveIdleMeters),

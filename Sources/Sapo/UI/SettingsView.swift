@@ -34,7 +34,7 @@ struct SettingsView: View {
             }
             Section("Meters") {
                 Toggle("Live meters while idle", isOn: $settings.liveIdleMeters)
-                Text("Level meters for sources you are not recording. Off by default: idle metering taps each audible app's audio, which can slightly change how it sounds. Recording meters are always on.").font(.caption)
+                Text("Pre-record level meters for application sources. These use audio taps and never open a microphone. Microphone rows only meter while recording — opening a mic just for an idle bar would switch Bluetooth headsets to low-quality call mode and degrade all system audio.").font(.caption)
             }
             Section("Tab capture") {
                 Toggle("Enable tab capture", isOn: $settings.tabCaptureEnabled)
