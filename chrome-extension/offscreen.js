@@ -61,7 +61,14 @@ async function startCapture(message) {
 
   const port = ensureNativePort(); // connect BEFORE the audio graph runs
 
-  const audioContext = new AudioContext({ sampleRate: 48000 });
+  // Do NOT force a sample rate here. Chrome does not reliably resample
+  // tab-capture streams to a forced AudioContext rate — forcing 48000 while
+  // the tab stream runs at the output device's rate (e.g. 44100 for
+  // Bluetooth) produced recordings that play back sped up with shifted
+  // pitch. With the default rate the context matches the stream, so the
+  // worklet receives un-resampled audio, and we report the real rate to the
+  // host on every chunk so Sapo stamps the stem correctly.
+  const audioContext = new AudioContext();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: {
@@ -81,6 +88,7 @@ async function startCapture(message) {
       nativePort.postMessage({
         type: 'audio',
         tabId: tabId,
+        sampleRate: audioContext.sampleRate,
         data: event.data.data
       });
     }

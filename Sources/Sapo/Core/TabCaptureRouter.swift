@@ -57,9 +57,16 @@ extension StemWriter {
 /// recording session; `TabStemUnit` adapts it into RecorderEngine's
 /// per-source `CaptureUnit` world.
 final class TabCaptureRouter {
-    /// Fixed capture format: 32-bit float PCM, 48kHz, mono.
+    /// Fallback sample rate when a peer doesn't report one (older extension
+    /// builds). The real rate always comes from the audio header.
+    static let defaultSampleRate: Double = 48000
+
+    /// Default capture format: 32-bit float PCM, mono. The sample rate here
+    /// is only the *placeholder* rate used to create crash-safe empty stems
+    /// before audio arrives; the stem's actual rate is taken from each audio
+    /// header (see handle(_:)) so the file header always matches the data.
     static let pcmFormat = AudioStreamBasicDescription(
-        mSampleRate: 48000.0,
+        mSampleRate: defaultSampleRate,
         mFormatID: kAudioFormatLinearPCM,
         mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
         mBytesPerPacket: 4,
@@ -74,6 +81,16 @@ final class TabCaptureRouter {
 
     private let tcpServer: TCPServer
     private var stems: [String: StemWriter] = [:]
+    /// Rate each stem was created with (the placeholder until real audio
+    /// arrives). Mirrors `stems` keys.
+    private var stemRates: [String: Double] = [:]
+    /// Per-stem destination URL and file format, kept so a stem can be
+    /// recreated at the header's real rate before anything is written.
+    private var writerURLs: [String: URL] = [:]
+    private var stemFormats: [String: StemFormat] = [:]
+    /// Actual stream rate observed per tab from audio headers — used to fix
+    /// the manifest (the start manifest necessarily carries the placeholder).
+    private var actualRates: [String: Double] = [:]
     private var levelHandlers: [String: (Float) -> Void] = [:]
     private var endedHandlers: [String: (String) -> Void] = [:]
     private var lastLevelAt: [String: Double] = [:]
@@ -88,10 +105,21 @@ final class TabCaptureRouter {
     }
 
     /// Create (immediately, so the start manifest is crash-safe) the stem for
-    /// a tab. Stems for tabs that never send audio remain empty files.
+    /// a tab. Stems for tabs that never send audio remain empty files. The
+    /// rate starts at the placeholder; the first audio header corrects it.
     func registerStem(tabID: String, stemURL: URL, format: StemFormat) throws {
         guard !stopped else { return }
         stems[tabID] = try StemWriter(url: stemURL, clientFormat: Self.pcmFormat, format: format)
+        stemRates[tabID] = Self.pcmFormat.mSampleRate
+        writerURLs[tabID] = stemURL
+        stemFormats[tabID] = format
+    }
+
+    /// The actual sample rate observed in this tab's audio headers, once any
+    /// audio arrived; nil before that. RecorderEngine writes this into the
+    /// session manifest so exported metadata matches the files.
+    func actualSampleRate(for tabID: String) -> Double? {
+        actualRates[tabID]
     }
 
     /// Per-tab callbacks. onEnded is delivered on the main queue.
@@ -121,15 +149,20 @@ final class TabCaptureRouter {
     func endStem(tabID: String, reason: String) {
         guard let writer = stems.removeValue(forKey: tabID) else { return }
         writer.close()
+        stemRates.removeValue(forKey: tabID)
+        writerURLs.removeValue(forKey: tabID)
+        stemFormats.removeValue(forKey: tabID)
         totalFrames.removeValue(forKey: tabID)
         let handler = endedHandlers.removeValue(forKey: tabID)
         levelHandlers.removeValue(forKey: tabID)
         lastLevelAt.removeValue(forKey: tabID)
         if stems.isEmpty {
+            // Last stem: shut the server down. endAllStems finds no remaining
+            // stems, so this delivers nothing — this stem's own onEnded is
+            // fired below like any other.
             stop(reason: reason)
-        } else {
-            DispatchQueue.main.async { handler?(reason) }
         }
+        DispatchQueue.main.async { handler?(reason) }
     }
 
     // MARK: - Internals
@@ -139,6 +172,11 @@ final class TabCaptureRouter {
         let ids = Array(stems.keys)
         for id in ids { stems[id]?.close() }
         stems = [:]
+        stemRates = [:]
+        writerURLs = [:]
+        stemFormats = [:]
+        // NOTE: actualRates is deliberately kept — RecorderEngine reads the
+        // observed rates after the router has stopped to correct the manifest.
         endedHandlers = [:]
         levelHandlers = [:]
         lastLevelAt = [:]
@@ -150,8 +188,41 @@ final class TabCaptureRouter {
 
     private func handle(headerData: Data, pcmData: Data) {
         guard let header = try? JSONDecoder().decode(TabAudioHeader.self, from: headerData),
-              let writer = stems[header.tabId] else { return } // unknown tab → drop
+              var writer = stems[header.tabId] else { return } // unknown tab → drop
         let frameCount = UInt32(pcmData.count / 4)
+
+        // The header carries the stream's REAL sample rate (reported by the
+        // browser via the native host). Trust it over the placeholder the
+        // stem was created with — a mismatched header is how 44.1 kHz tab
+        // audio (Bluetooth/DAC output) used to end up in 48 kHz files, which
+        // then play back sped up with shifted pitch.
+        let rate = header.sampleRate > 0 ? Double(header.sampleRate) : Self.defaultSampleRate
+        actualRates[header.tabId] = rate
+        if let current = stemRates[header.tabId], current != rate {
+            if (totalFrames[header.tabId] ?? 0) == 0 {
+                // Nothing recorded yet: recreate the (empty) stem at the real
+                // rate. Erase-on-create makes this safe — no audio is lost.
+                writer.close()
+                guard let url = writerURLs[header.tabId],
+                      let format = stemFormats[header.tabId],
+                      let recreated = try? StemWriter(url: url,
+                                                      clientFormat: Self.pcmFormatWithRate(rate),
+                                                      format: format) else {
+                    endStem(tabID: header.tabId, reason: "writeError")
+                    return
+                }
+                stems[header.tabId] = recreated
+                stemRates[header.tabId] = rate
+                writer = recreated
+            } else {
+                // Mid-stream rate change would corrupt the file (two rates in
+                // one timeline). End the stem — audio recorded so far stays
+                // valid at its original rate.
+                endStem(tabID: header.tabId, reason: "sampleRateChanged")
+                return
+            }
+        }
+
         do {
             try writer.write(pcm: pcmData, frameCount: frameCount)
             totalFrames[header.tabId, default: 0] += frameCount
@@ -160,6 +231,13 @@ final class TabCaptureRouter {
             print("Tab stem write error: \(error)")
             endStem(tabID: header.tabId, reason: "writeError")
         }
+    }
+
+    /// The capture ASBD (float32 mono) at an arbitrary rate.
+    private static func pcmFormatWithRate(_ rate: Double) -> AudioStreamBasicDescription {
+        var asbd = pcmFormat
+        asbd.mSampleRate = rate
+        return asbd
     }
 
     private func updateLevel(tabID: String, pcm: Data) {

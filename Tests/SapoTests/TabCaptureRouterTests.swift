@@ -25,9 +25,9 @@ final class TabCaptureRouterTests: XCTestCase {
     }
 
     /// Send one framed message (header line + exact PCM) like the host does.
-    private func sendFramed(_ fd: CInt, tabId: String, pcm: Data) throws {
+    private func sendFramed(_ fd: CInt, tabId: String, sampleRate: Int = 48000, pcm: Data) throws {
         let header = try JSONEncoder().encode(
-            TabAudioHeader(tabId: tabId, sampleRate: 48000, frameCount: pcm.count / 4))
+            TabAudioHeader(tabId: tabId, sampleRate: sampleRate, frameCount: pcm.count / 4))
         var framed = header
         framed.append(0x0A)
         framed.append(pcm)
@@ -93,6 +93,54 @@ final class TabCaptureRouterTests: XCTestCase {
 
         let a = try AVAudioFile(forReading: stemA)
         XCTAssertEqual(a.length, 2400, "only the registered tab's frames land")
+    }
+
+    /// Regression: the stem's declared sample rate must come from the audio
+    /// header, not the hard-coded 48 kHz default. A tab stream captured at
+    /// 44.1 kHz (e.g. Bluetooth output) written into a 48 kHz file plays back
+    /// ~9% fast with shifted pitch (the "sped up" export bug).
+    func testStemSampleRateComesFromHeader() throws {
+        let router = TabCaptureRouter()
+        try router.registerStem(tabID: "11", stemURL: stemA, format: .wav)
+        try router.start()
+
+        let fd = try connectLocal()
+        try sendFramed(fd, tabId: "11", sampleRate: 44100, pcm: Data(repeating: 0, count: 4410 * 4))
+        Thread.sleep(forTimeInterval: 0.4)
+        close(fd)
+        router.stop(reason: "testDone")
+
+        let a = try AVAudioFile(forReading: stemA)
+        XCTAssertEqual(a.length, 4410, "all frames preserved")
+        XCTAssertEqual(a.processingFormat.sampleRate, 44100, accuracy: 0.1,
+                       "file header must match the actual stream rate")
+        XCTAssertEqual(router.actualSampleRate(for: "11"), 44100)
+    }
+
+    /// A rate change after audio was already written would corrupt the file
+    /// (frames of two rates in one timeline). The stem must end instead,
+    /// preserving the valid audio recorded so far.
+    func testMidStreamSampleRateChangeEndsStem() throws {
+        let router = TabCaptureRouter()
+        try router.registerStem(tabID: "11", stemURL: stemA, format: .wav)
+        try router.start()
+
+        var ended: [String] = []
+        let exp = expectation(description: "stem ended on rate change")
+        router.setHandlers(tabID: "11", onLevel: nil,
+                           onEnded: { reason in ended.append(reason); exp.fulfill() })
+
+        let fd = try connectLocal()
+        try sendFramed(fd, tabId: "11", sampleRate: 48000, pcm: Data(repeating: 0, count: 4800 * 4))
+        try sendFramed(fd, tabId: "11", sampleRate: 44100, pcm: Data(repeating: 0, count: 4410 * 4))
+        wait(for: [exp], timeout: 3.0)
+        close(fd)
+        router.stop(reason: "testDone")
+
+        XCTAssertEqual(ended, ["sampleRateChanged"])
+        let a = try AVAudioFile(forReading: stemA)
+        XCTAssertEqual(a.length, 4800, "only the pre-change frames survive")
+        XCTAssertEqual(a.processingFormat.sampleRate, 48000, accuracy: 0.1)
     }
 
     /// Ending one tab leaves the other recording; ending the last stops the

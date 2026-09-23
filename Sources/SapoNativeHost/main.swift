@@ -16,6 +16,8 @@ struct NativeMessage: Codable {
     let data: String?  // base64-encoded Float32 PCM (for "audio" type)
     let message: String?  // for "error" type
     let tabs: [HostTab]?  // for "tablist" type
+    let sampleRate: Double?  // actual AudioContext rate (for "audio" type);
+                             // nil from older extensions → 48 kHz fallback
 }
 
 struct HostTab: Codable {
@@ -105,7 +107,13 @@ struct NativeHost {
                     continue
                 }
                 
-                let header = TabAudioHeader(tabId: message.tabId, sampleRate: 48000, frameCount: encodedData.count / 4)
+                // Relay the extension's ACTUAL AudioContext sample rate. The
+                // old hard-coded 48000 stamped 44.1 kHz tab streams (e.g.
+                // Bluetooth output) into 48 kHz files — playback sped up.
+                let reportedRate = message.sampleRate ?? 48000
+                let header = TabAudioHeader(tabId: message.tabId,
+                                            sampleRate: Int(reportedRate.rounded()),
+                                            frameCount: encodedData.count / 4)
                 var headerJSON = (try? JSONEncoder().encode(header)) ?? Data()
                 headerJSON.append(0x0A) // newline terminator — Sapo's TCP server reads header until \n
                 audioConnection?.write(headerJSON)
@@ -161,7 +169,8 @@ struct NativeHost {
     }
     
     private static func sendNativeMessage(stdout: FileHandle, type: String, tabId: String, message: String?) {
-        let msg = NativeMessage(type: type, tabId: tabId, data: nil, message: message, tabs: nil)
+        let msg = NativeMessage(type: type, tabId: tabId, data: nil, message: message, tabs: nil,
+                                sampleRate: nil)
         let data = try? JSONEncoder().encode(msg)
         var length = UInt32(data?.count ?? 0).nativeToLittleEndian()
         stdout.write(Data(bytes: &length, count: 4))

@@ -281,6 +281,15 @@ final class RecorderEngine: ObservableObject {
         if let idx = manifest.stems.firstIndex(where: { $0.source.id == sourceID }) {
             manifest.stems[idx].endTime = Date()
             manifest.stems[idx].endEvent = reason
+            // Tab stems start with the placeholder sample rate (the real one
+            // is only known once audio flowed). Before saving, correct it from
+            // the router's observation so the manifest matches the files.
+            if manifest.stems[idx].source.kind == .tabCapture {
+                let tabID = sourceID.components(separatedBy: "-").last ?? sourceID
+                if let rate = tabRouter?.actualSampleRate(for: tabID) {
+                    manifest.stems[idx].sampleRate = rate
+                }
+            }
             try? store.save(manifest, to: activeSessionFolder!)
         } else {
             // No manifest stem matched this chain: it was a mid-session add
@@ -425,6 +434,10 @@ final class RecorderEngine: ObservableObject {
 
     func stopSession() {
         guard case .recording = state else { return }
+        // Capture the tab router BEFORE stopping units: it holds the actually
+        // observed per-tab sample rates needed to correct the manifest below
+        // (the start manifest necessarily carries the placeholder rate).
+        let activeTabRouter = self.tabRouter
         for item in chains { item.unit.stop(reason: "sessionEnd") }
         // TabStemUnit.stop ends each stem; when the last one ends the router
         // shuts its server down itself — just drop the reference.
@@ -440,6 +453,18 @@ final class RecorderEngine: ObservableObject {
         // dispose() is idempotent at the HAL level.
         for var tap in chains.compactMap(\.tap) { tap.dispose() }
         if var manifest = self.manifest, let store = self.store {
+            // Correct tab stems' sample rate with what the router observed —
+            // header-reported reality beats the registration placeholder.
+            if let router = activeTabRouter {
+                for i in manifest.stems.indices
+                where manifest.stems[i].source.kind == .tabCapture {
+                    let tabID = manifest.stems[i].source.id
+                        .components(separatedBy: "-").last ?? manifest.stems[i].source.id
+                    if let rate = router.actualSampleRate(for: tabID) {
+                        manifest.stems[i].sampleRate = rate
+                    }
+                }
+            }
             manifest.endTime = Date()
             for i in manifest.stems.indices where manifest.stems[i].endTime == nil {
                 manifest.stems[i].endTime = manifest.endTime
