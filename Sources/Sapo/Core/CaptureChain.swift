@@ -308,9 +308,17 @@ final class CaptureChain: CaptureUnit {
                 // AVAudioConverterInputBlock is escaping — capture state in a
                 // box, not a local var.
                 let fed = FeedOnceBox()
-                let inputBlock: AVAudioConverterInputBlock = { _, _ in
-                    if fed.done { return ctx.emptyBuffer }
+                // This SDK's input block MUST set outStatus: .haveData while
+                // supplying data, .noDataNow (+ zero-length buffer) after.
+                // Leaving it unset reads as end-of-stream — the converter then
+                // emits nothing, forever (silently empty stems).
+                let inputBlock: AVAudioConverterInputBlock = { _, status in
+                    if fed.done {
+                        status.pointee = .noDataNow
+                        return ctx.emptyBuffer
+                    }
                     fed.done = true
+                    status.pointee = .haveData
                     return ctx.deviceBuffer
                 }
                 let status = converter.convert(to: canonicalBuffer,
