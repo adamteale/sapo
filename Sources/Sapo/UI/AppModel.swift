@@ -148,6 +148,10 @@ final class AppModel: ObservableObject {
     /// port 5679). Kept so toggling tab capture re-applies without waiting
     /// for the next push.
     private(set) var lastTabList: [TabInfo] = []
+    /// When the most recent push arrived — nil once Sapo launched without
+    /// receiving any. The UI uses it to distinguish "no tabs audible" from
+    /// "the extension isn't pushing to this app".
+    @Published private(set) var lastTabListReceivedAt: Date?
     private var tabRegistry: TabRegistryServer?
 
     /// Start the always-on registry listener (port 5679). Called once from
@@ -169,6 +173,7 @@ final class AppModel: ObservableObject {
     /// Registry push arrived (also the seam tests drive directly).
     func handleTabList(_ tabs: [TabInfo]) {
         lastTabList = tabs
+        lastTabListReceivedAt = Date()
         applyTabList()
         reconcileMeters()
     }

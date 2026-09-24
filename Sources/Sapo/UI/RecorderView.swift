@@ -60,6 +60,15 @@ struct RecorderView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if model.tabSources.isEmpty {
+                        if let received = model.lastTabListReceivedAt {
+                            Text("No audible tabs right now — last list received \(received.formatted(.relative(presentation: .named)))).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("No tab list received from the browser yet. The Sapo extension must be installed in the browser profile you are using — brave://extensions → Load unpacked → select the sapo/chrome-extension folder. Tab lists refresh about once a minute.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Button("Refresh tabs") {
                             model.refreshTabSources()
                         }
@@ -117,6 +126,7 @@ struct RecorderView: View {
                 .frame(width: 90)
                 .opacity(model.metersOn ? 1 : 0.25)
         }
+        .listRowBackground(Color.clear) // flat rows — window bg owns the color
         .opacity(muted ? 0.5 : 1)
     }
 
