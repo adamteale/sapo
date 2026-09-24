@@ -90,23 +90,38 @@ struct SapoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
+        mainWindow
+        Settings {
+            SettingsView(settings: AppModel.shared.settings, model: AppModel.shared)
+        }
+    }
+
+    /// Title-bar-less main window: the Recorder/Sessions tab switcher is the
+    /// topmost element — no separate grey title-bar band above it. Draggable
+    /// background keeps the window movable without a title bar (macOS 15+).
+    /// Title-bar-less main window: the Recorder/Sessions tab switcher is the
+    /// topmost element — no separate grey title-bar band above it. The window
+    /// stays draggable because MainTabs sets isMovableByWindowBackground.
+    private var mainWindow: some Scene {
         WindowGroup("Sapo") {
             MainTabs(model: AppModel.shared)
-                .padding(.top, 4) // breathing room above the Recorder/Sessions tabs
+                .padding(.top, 2)
                 .frame(minWidth: 560, minHeight: 500)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Explicit full-height window background: without it the
                 // list/pane backgrounds can stop short of the window edges,
                 // leaving a mismatched strip.
                 .background(Color(nsColor: .windowBackgroundColor))
-                .onAppear { registerShortcuts() }
+                .onAppear {
+                    registerShortcuts()
+                    // Hidden-title-bar windows don't drag by default; make
+                    // any non-interactive background area draggable.
+                    NSApp.windows.forEach { $0.isMovableByWindowBackground = true }
+                }
                 .onDisappear { unregisterShortcuts() }
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-
-        Settings {
-            SettingsView(settings: AppModel.shared.settings, model: AppModel.shared)
-        }
     }
 }
 
