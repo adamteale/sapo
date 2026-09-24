@@ -92,7 +92,13 @@ struct SapoApp: App {
     var body: some Scene {
         WindowGroup("Sapo") {
             MainTabs(model: AppModel.shared)
+                .padding(.top, 8) // breathing room above the Recorder/Sessions tabs
                 .frame(minWidth: 560, minHeight: 500)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Explicit full-height window background: without it the
+                // list/pane backgrounds can stop short of the window edges,
+                // leaving a mismatched strip.
+                .background(Color(nsColor: .windowBackgroundColor))
                 .onAppear { registerShortcuts() }
                 .onDisappear { unregisterShortcuts() }
         }
@@ -159,5 +165,6 @@ struct MainTabs: View {
             RecorderView(model: model).tabItem { Label("Recorder", systemImage: "record.circle") }.tag(0)
             SessionsView(model: model).tabItem { Label("Sessions", systemImage: "list.bullet") }.tag(1)
         }
+        .padding(.top, 4)
     }
 }
