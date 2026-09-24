@@ -52,10 +52,10 @@ final class SettingsStore: ObservableObject {
     @Published var tabCapturePort: Int {
         didSet { defaults.set(tabCapturePort, forKey: "tabCapturePort") }
     }
-    /// Opt-in live level meters for non-recording sources while the window is
-    /// open. Default OFF: each idle meter tap on an app source is a real
-    /// process tap that reroutes that app's audio through an aggregate device
-    /// (audible quality change). Recording meters are unaffected by this.
+    /// Live level meters for non-recording sources while the window is open.
+    /// Default ON — app sources meter via process taps, which never open a
+    /// microphone, so the old Bluetooth HFP trap cannot occur. Microphone
+    /// rows are excluded from idle metering regardless of this flag.
     @Published var liveIdleMeters: Bool {
         didSet { defaults.set(liveIdleMeters, forKey: "liveIdleMeters") }
     }
@@ -81,7 +81,12 @@ final class SettingsStore: ObservableObject {
         } else {
             tabCaptureEnabled = defaults.bool(forKey: "tabCaptureEnabled")
         }
-        liveIdleMeters = defaults.bool(forKey: "liveIdleMeters")
+        // Default ON (since idle metering is app-taps-only — it never opens
+        // a microphone, so the old HFP/Bluetooth trap can't occur). A user
+        // who explicitly turned it off keeps their choice.
+        liveIdleMeters = defaults.object(forKey: "liveIdleMeters") == nil
+            ? true
+            : defaults.bool(forKey: "liveIdleMeters")
         tabCapturePort = defaults.integer(forKey: "tabCapturePort")
         if tabCapturePort == 0 { tabCapturePort = 5678; defaults.set(5678, forKey: "tabCapturePort") }
     }
