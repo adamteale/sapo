@@ -34,6 +34,9 @@ struct RecorderView: View {
             }
             if model.permissionDenied { permissionBar }
         }
+        // The window background owns the color end-to-end; a List's own
+        // opaque background would otherwise meet it at a visible seam.
+        .scrollContentBackground(.hidden)
         .navigationTitle("Recorder")
         .onAppear { model.refreshSources() }
         .onReceive(Self.timer) { _ in

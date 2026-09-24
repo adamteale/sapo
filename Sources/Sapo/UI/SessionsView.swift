@@ -32,6 +32,7 @@ struct SessionsView: View {
                 }
             }
             .navigationTitle("Sessions")
+            .scrollContentBackground(.hidden)
             .onAppear { sessions.reload(store: model.store) }
         }
     }
