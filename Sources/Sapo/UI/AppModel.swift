@@ -157,6 +157,27 @@ final class AppModel: ObservableObject {
     /// Start the always-on registry listener (port 5679). Called once from
     /// app launch — NOT from init, so tests constructing many AppModels
     /// don't fight over the port.
+    /// Escapes the silent-tap launch context: asks Terminal to spawn a fresh
+    /// Sapo as a Terminal child (the context where process taps deliver
+    /// audio — README "Running dev builds"), then quits this instance.
+    /// No-op outside a bundled app (tests, CLI).
+    func relaunchInAudioSafeContext() {
+        guard let bin = Bundle.main.executableURL?.path,
+              Bundle.main.bundleURL.pathExtension == "app" else { return }
+        let doScript = "nohup '\(bin)' >/dev/null 2>&1 & disown"
+        let apple = "tell application \"Terminal\"\n"
+            + "do script \"\(doScript)\"\n"
+            + "activate\n"
+            + "end tell"
+        guard let source = NSAppleScript(source: apple) else { return }
+        var err: NSDictionary?
+        source.executeAndReturnError(&err)
+        guard err == nil else { return } // Terminal refused — keep the app alive
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NSApp.terminate(nil)
+        }
+    }
+
     func startTabRegistry() {
         guard tabRegistry == nil else { return }
         let server = TabRegistryServer(port: 5679)

@@ -22,6 +22,9 @@ struct RecorderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !engine.silentTapSources.isEmpty {
+                silentTapBanner
+            }
             sourceList
             Divider()
             controlsBar
@@ -42,6 +45,31 @@ struct RecorderView: View {
         .onReceive(Self.timer) { _ in
             model.objectWillChange.send() // refresh timer + meters (10Hz; cheap even when idle)
         }
+    }
+
+    /// Shown when an app tap delivers pure zeros right after record start:
+    /// the launch-context silent-tap problem, with a one-click escape.
+    private var silentTapBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No audio is arriving from \(engine.silentTapSources.joined(separator: ", ")). If it should be playing sound, Sapo was probably launched by Finder/Dock — macOS delivers silent taps to those launches.")
+                    .font(.callout)
+                HStack {
+                    Button("Relaunch in audio-safe context") {
+                        model.relaunchInAudioSafeContext()
+                    }
+                    .controlSize(.small)
+                    Text("reopens Sapo via Terminal; recording stops and restarts there")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var sourceList: some View {

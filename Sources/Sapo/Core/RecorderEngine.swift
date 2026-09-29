@@ -64,6 +64,10 @@ final class RecorderEngine: ObservableObject {
     @Published private(set) var state: RecordState = .idle
     @Published private(set) var levels: [String: Float] = [:]
     @Published private(set) var activeSessionFolder: URL?
+    /// App sources whose taps delivered pure silence right after start — the
+    /// silent-tap launch-context problem (README "Running dev builds").
+    /// Shown by the UI with a relaunch offer; cleared on stop.
+    @Published var silentTapSources: [String] = []
 
     private var chains: [(source: SourceDescriptor, unit: CaptureUnit, tap: ProcessTapSession?, fileName: String)] = []
     /// Shared per-session router demultiplexing all tab-capture sources.
@@ -252,6 +256,28 @@ final class RecorderEngine: ObservableObject {
         }
 
         state = .recording(startedAt: manifest.startTime)
+
+        // Silent-tap detection: when Sapo is launched by Finder/Dock/launchd,
+        // macOS delivers pure zeros to process taps (README "Running dev
+        // builds"). Give the taps ~2.5s, then flag app chains that delivered
+        // nothing so the UI can offer the audio-safe relaunch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.flagSilentTapsIfNeeded()
+        }
+    }
+
+    /// Runs on main (scheduled from startSession). Recording must still be
+    /// active; only app-kind chains can have broken taps (mic chains are
+    /// real input devices and unaffected by the launch-context issue).
+    private func flagSilentTapsIfNeeded() {
+        guard case .recording = state else { return }
+        let names = chains.compactMap { item -> String? in
+            guard item.source.kind == .application,
+                  let chain = item.unit as? CaptureChain,
+                  !chain.hasDeliveredAudio else { return nil }
+            return item.source.name
+        }
+        if !names.isEmpty { silentTapSources = names }
     }
 
     private func observeAppTermination() {
@@ -478,6 +504,7 @@ final class RecorderEngine: ObservableObject {
         workspaceObserver = nil
         chains = []
         levels = [:]
+        silentTapSources = []
         manifest = nil
         store = nil
         activeSessionFolder = nil

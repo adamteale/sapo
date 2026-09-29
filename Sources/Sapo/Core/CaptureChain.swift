@@ -82,6 +82,11 @@ final class CaptureChain: CaptureUnit {
     var onLevel: ((Float) -> Void)?          // RMS 0...1, throttled to ~10 Hz
     var onEnded: ((String) -> Void)?         // called once when capture ends
     var clientFormat: AudioStreamBasicDescription { _clientFormat }
+    /// True once this chain has delivered ANY non-silent sample. RecorderEngine
+    /// checks app chains shortly after start: pure zeros mean the process-tap
+    /// context is broken (silent taps — see README "Running dev builds").
+    /// Written on the IOProc thread, read on main; a racy bool read is fine.
+    private(set) var hasDeliveredAudio = false
 
     /// Immutable snapshot of everything the IOProc needs to turn delivered
     /// bytes into canonical-rate stereo. Swapped atomically on rate changes.
@@ -370,6 +375,7 @@ final class CaptureChain: CaptureUnit {
         var sum: Float = 0
         for i in 0..<Int(frames) { let v = l[i]; sum += v * v }
         let rms = frames > 0 ? sqrt(sum / Float(frames)) : 0
+        if rms > 0.0005 { hasDeliveredAudio = true }
         DispatchQueue.main.async { [weak self] in self?.onLevel?(min(rms * 4, 1)) }
     }
 
